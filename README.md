@@ -1,8 +1,8 @@
-# rs-ether — Elixir Sidecar for Multi-World RS-Server
+# rs-ether — Elixir Sidecar for Multi-World Nodes
 
 ## Context
 
-Each Rust rs-server instance represents one game world. For cross-world social features (friends presence, private
+Each Rust node instance represents one game world. For cross-world social features (friends presence, private
 messaging, friend/ignore lists), each world runs an Elixir sidecar process called **rs-ether**. The Elixir sidecars form
 a BEAM cluster and communicate natively using Erlang distribution. Communication between Rust and its local Elixir
 sidecar uses raw binary frames over TCP.
@@ -63,7 +63,7 @@ The `node: u8` field in `UpdateFriendList` uses the node ID (10, 11, etc.) for o
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│                        Rust rs-server                          │
+│                        Rust node                               │
 │                                                                │
 │  ┌──────────┐   ┌────────────┐   ┌──────────────────────────┐  │
 │  │ HTTP     │   │ TCP Accept │   │ Engine (600ms tick)      │  │
@@ -586,17 +586,6 @@ Applied in: `lookup_presence`, `broadcast_online`, `rebroadcast_presence`, `rece
 | `--cluster`    | ""           | Comma-separated BEAM node names |
 
 All DB and cluster args are passed as env vars to the sidecar.
-
-### Key Files
-
-| File                             | Purpose                                                       |
-|----------------------------------|---------------------------------------------------------------|
-| `rs-server/src/main.rs`          | CLI args, sidecar lifecycle, shutdown guard                   |
-| `rs-engine/src/ether_client.rs`  | Opcode enums, binary encode/decode, TCP client task           |
-| `rs-engine/src/engine.rs`        | `process_ether_inbound()`, pending logins, reconnect handling |
-| `rs-engine/src/phases/login.rs`  | Login check flow with ether, `accept_login()`                 |
-| `rs-engine/src/phases/logout.rs` | PlayerLogout to ether before removal                          |
-| `rs-engine/src/handlers/`        | 6 social packet handlers forwarding to ether                  |
 
 ### Sidecar Lifecycle
 
