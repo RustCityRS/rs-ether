@@ -15,20 +15,16 @@ defmodule RsEther.Protocol do
   @op_private_message 7
   @op_request_lists 8
   @op_chat_mode_update 9
-  @op_player_save_request 10
-  @op_player_load_request 11
-  @op_player_resync 12
-  @op_login_check 13
-  @op_refresh_all 14
+  @op_player_resync 10
+  @op_login_check 11
+  @op_refresh_all 12
 
   # Elixir -> Rust opcodes
   @op_friend_update 128
   @op_ignore_list_full 129
   @op_pm_deliver 130
   @op_friend_list_complete 131
-  @op_player_load_response 132
-  @op_player_save_ack 133
-  @op_login_check_response 134
+  @op_login_check_response 132
 
   # ── Decode (Rust -> Elixir) ──
 
@@ -72,14 +68,6 @@ defmodule RsEther.Protocol do
     {:chat_mode_update, user37, private_mode}
   end
 
-  def decode(<<@op_player_save_request, user37::big-unsigned-64, save_data::binary>>) do
-    {:player_save_request, user37, save_data}
-  end
-
-  def decode(<<@op_player_load_request, user37::big-unsigned-64>>) do
-    {:player_load_request, user37}
-  end
-
   def decode(<<@op_player_resync, user37::big-unsigned-64, pid::big-16, private_mode::8>>) do
     {:player_resync, user37, pid, private_mode}
   end
@@ -113,15 +101,6 @@ defmodule RsEther.Protocol do
 
   def encode({:friend_list_complete, target37}) do
     <<@op_friend_list_complete, target37::big-unsigned-64>>
-  end
-
-  def encode({:player_load_response, user37, save_data}) do
-    <<@op_player_load_response, user37::big-unsigned-64, save_data::binary>>
-  end
-
-  def encode({:player_save_ack, user37, success}) do
-    success_byte = if success, do: 1, else: 0
-    <<@op_player_save_ack, user37::big-unsigned-64, success_byte::8>>
   end
 
   def encode({:login_check_response, user37, allowed}) do

@@ -114,12 +114,6 @@ defmodule RsEther.WorldLink do
           GenServer.cast(pid, :refresh_friends)
           GenServer.cast(pid, :rebroadcast_presence)
         end)
-
-      {:player_save_request, _user37, _save_data} ->
-        :ok
-
-      {:player_load_request, _user37} ->
-        :ok
     end
 
     :inet.setopts(socket, active: :once)

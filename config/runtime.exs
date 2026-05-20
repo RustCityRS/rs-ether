@@ -16,17 +16,19 @@ config :rs_ether, RsEther.Repo,
 
 cluster_hosts = System.get_env("RS_CLUSTER_HOSTS", "")
 
-if cluster_hosts != "" do
-  hosts =
+hosts =
+  if cluster_hosts != "" do
     cluster_hosts
     |> String.split(",", trim: true)
     |> Enum.map(&String.to_atom/1)
+  else
+    for id <- 10..20, do: :"world#{id}@127.0.0.1"
+  end
 
-  config :libcluster,
-    topologies: [
-      rs_ether: [
-        strategy: Cluster.Strategy.Epmd,
-        config: [hosts: hosts]
-      ]
+config :libcluster,
+  topologies: [
+    rs_ether: [
+      strategy: Cluster.Strategy.Epmd,
+      config: [hosts: hosts]
     ]
-end
+  ]
