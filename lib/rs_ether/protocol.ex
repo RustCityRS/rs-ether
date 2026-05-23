@@ -25,6 +25,7 @@ defmodule RsEther.Protocol do
   @op_pm_deliver 130
   @op_friend_list_complete 131
   @op_login_check_response 132
+  @op_world_ready 133
 
   # ── Decode (Rust -> Elixir) ──
 
@@ -106,5 +107,9 @@ defmodule RsEther.Protocol do
   def encode({:login_check_response, user37, allowed}) do
     allowed_byte = if allowed, do: 1, else: 0
     <<@op_login_check_response, user37::big-unsigned-64, allowed_byte::8>>
+  end
+
+  def encode(:world_ready) do
+    <<@op_world_ready>>
   end
 end

@@ -60,6 +60,8 @@ defmodule RsEther.WorldLink do
 
       {:world_register, node_id} ->
         Logger.info("WorldLink: Rust registered as node #{node_id}")
+        payload = RsEther.Protocol.encode(:world_ready)
+        :gen_tcp.send(socket, payload)
 
       {:player_login, user37, pid} ->
         start_session(user37, pid, state.node_id)
