@@ -1,0 +1,9 @@
+_build
+deps
+.git
+.github
+.idea
+burrito_out
+*.tar
+README.md
+LICENSE.md

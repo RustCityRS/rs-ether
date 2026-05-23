@@ -3,6 +3,17 @@ defmodule RsEther.Application do
 
   @impl true
   def start(_type, _args) do
+    case command() do
+      ["migrate"] ->
+        RsEther.Release.migrate()
+        System.halt(0)
+
+      _ ->
+        start_supervisor()
+    end
+  end
+
+  defp start_supervisor do
     node_id = Application.fetch_env!(:rs_ether, :node_id)
     ether_port = Application.fetch_env!(:rs_ether, :ether_port)
 
@@ -20,5 +31,13 @@ defmodule RsEther.Application do
 
     opts = [strategy: :one_for_one, name: RsEther.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # The Burrito binary forwards its CLI args to the BEAM as plain arguments, so
+  # `<binary> migrate` lands here and runs the prepare step. A plain release
+  # (Docker) boots with no plain args and migrates via `bin/rs_ether eval`, so
+  # this returns [] there and the supervision tree starts normally.
+  defp command do
+    :init.get_plain_arguments() |> Enum.map(&to_string/1)
   end
 end

@@ -8,8 +8,10 @@ a BEAM cluster and communicate natively using Erlang distribution. Communication
 sidecar uses raw binary frames over TCP.
 
 The Rust server automatically spawns, supervises, and kills its sidecar. If the sidecar crashes, it is restarted with
-exponential backoff. On startup, the server runs `mix deps.get`, `mix ecto.create`, and `mix ecto.migrate` before
-launching the sidecar.
+exponential backoff. The sidecar ships as a self-contained artifact — a Docker image or a native single-file binary
+(see [Publishing & Distribution](#publishing--distribution)) — so the host needs no Elixir/Erlang toolchain and no
+submodule. On startup, the server runs the migrate prepare step once (creates the database if missing, applies
+migrations), then launches the sidecar.
 
 ---
 
@@ -263,13 +265,14 @@ cargo run -p rs-server -- --node-id 10
   ├─ 1. Pack content sources → CacheStore
   ├─ 2. Load RSA key pair
   │
-  ├─ 3. Prepare sidecar
-  │     ├─ mix deps.get
-  │     ├─ mix ecto.create --quiet
-  │     └─ mix ecto.migrate --quiet
+  ├─ 3. Prepare sidecar (creates DB if missing, runs migrations)
+  │     ├─ binary: rs_ether migrate
+  │     └─ docker: rs_ether eval "RsEther.Release.migrate()"
   │
   ├─ 4. Spawn sidecar (supervised, kill_on_drop)
-  │     └─ elixir --name world10@127.0.0.1 --cookie rs_secret -S mix run --no-halt
+  │     ├─ env: RELEASE_NODE=world10@127.0.0.1 RELEASE_DISTRIBUTION=name RELEASE_COOKIE=rs_secret
+  │     ├─ binary: rs_ether
+  │     └─ docker: rs_ether start
   │
   ├─ 5. Wait for sidecar TCP ready (ether_wait_connected)
   │
@@ -589,9 +592,11 @@ All DB and cluster args are passed as env vars to the sidecar.
 
 ### Sidecar Lifecycle
 
-1. **Startup**: `prepare_ether_sidecar()` runs `mix deps.get`, `mix ecto.create --quiet`, `mix ecto.migrate --quiet`
-2. **Spawn**: `supervise_ether_sidecar()` starts the Elixir process with `kill_on_drop`, piped stdout/stderr routed
-   through tracing
+1. **Startup**: `prepare_ether_sidecar()` runs the migrate prepare step (`rs_ether migrate`, or
+   `rs_ether eval "RsEther.Release.migrate()"` for the image) — creates the database if missing and applies
+   migrations. Deps are baked into the artifact, so there is no `deps.get`.
+2. **Spawn**: `supervise_ether_sidecar()` starts the sidecar artifact (`rs_ether` / `rs_ether start`) with
+   `kill_on_drop`, piped stdout/stderr routed through tracing
 3. **Wait**: `ether_wait_connected()` blocks until the sidecar's TCP port accepts connections
 4. **Connect**: `ether_client_task()` maintains the persistent TCP connection with reconnect backoff
 5. **Supervise**: if the sidecar exits with non-zero status, it is restarted with backoff (1s → 30s max)
@@ -605,6 +610,69 @@ cycle():
 ```
 
 `process_ether_inbound()` drains up to 100 messages per tick via `try_recv()`. Never blocks.
+
+---
+
+## Publishing & Distribution
+
+rs-ether ships as two self-contained artifacts built from one OTP release, so hosts running Rust worlds need no
+Elixir/Erlang toolchain and no git submodule.
+
+| Artifact | What it is | Best for |
+|----------|-----------|----------|
+| Docker image (`ghcr.io/rustcityrs/rs-ether`) | multi-arch (amd64/arm64) release image | containerized deployments |
+| Native binary (`rs_ether_<target>`) | single self-extracting executable, ERTS bundled | embedding next to the Rust world |
+
+Native targets: `linux_x86_64`, `linux_arm64`, `macos_x86_64`, `macos_arm64`, `windows_x86_64`.
+
+### Releasing
+
+CI publishes both artifacts on a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The `release` workflow builds and pushes the multi-arch image to `ghcr.io/rustcityrs/rs-ether:v0.1.0` (and `:latest`),
+and builds every native binary with Burrito, attaching them (+ `.sha256`) to the GitHub release.
+
+### Building locally
+
+```bash
+# Docker image
+docker build -t rs-ether:dev .
+
+# Native binaries (needs Elixir/OTP + Zig 0.15.2)
+BURRITO_BUILD=1 MIX_ENV=prod mix release rs_ether   # outputs ./burrito_out/rs_ether_<target>
+```
+
+### How the Rust world consumes it
+
+Node identity and cookie move from CLI flags to environment variables (the artifact has no `mix`/`elixir` entrypoint).
+DB and cluster config keep using the existing `RS_*` env vars consumed by `config/runtime.exs`.
+
+| Step | Native binary | Docker image |
+|------|---------------|--------------|
+| Prepare (once per DB) | `rs_ether migrate` | `rs_ether eval "RsEther.Release.migrate()"` |
+| Run (per world) | `rs_ether` | `rs_ether start` |
+
+Required env for the run step (per world):
+
+```
+RELEASE_NODE=world10@127.0.0.1     # was: --name
+RELEASE_DISTRIBUTION=name
+RELEASE_COOKIE=rs_secret           # was: --cookie
+RS_NODE_ID=10
+RS_ETHER_PORT=5010
+RS_DB_HOST=...  RS_DB_PORT=...  RS_DB_NAME=...  RS_DB_USER=...  RS_DB_PASS=...
+RS_CLUSTER_HOSTS=world10@10.0.0.1,world11@10.0.0.2   # optional
+```
+
+`kill_on_drop` still works: the run step execs the BEAM directly, so the Rust supervisor's signal reaches it. The
+migrate step only needs to run once per database — it is idempotent and advisory-locked, so concurrent world startups
+are safe. For multi-host clustering, containers must share the cookie, expose EPMD (4369) plus the distribution port
+range between hosts, and set `RS_CLUSTER_HOSTS`.
 
 ---
 
