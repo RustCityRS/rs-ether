@@ -10,3 +10,5 @@ config :libcluster, topologies: []
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:node_id, :user37]
+
+import_config "#{config_env()}.exs"

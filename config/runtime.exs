@@ -1,5 +1,7 @@
 import Config
 
+unless config_env() == :test do
+
 node_id = System.get_env("RS_NODE_ID", "10")
 ether_port = System.get_env("RS_ETHER_PORT", "5010")
 
@@ -32,3 +34,5 @@ config :libcluster,
       config: [hosts: hosts]
     ]
   ]
+
+end
