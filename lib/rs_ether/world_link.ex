@@ -100,12 +100,14 @@ defmodule RsEther.WorldLink do
         if has_session do
           RsEther.WorldLink.send_to_rust({:login_check_response, user37, false})
         else
-          case :global.register_name({:login_lock, user37}, self()) do
+          lock_pid = spawn(fn -> Process.sleep(10_000) end)
+
+          case :global.register_name({:login_lock, user37}, lock_pid) do
             :yes ->
               RsEther.WorldLink.send_to_rust({:login_check_response, user37, true})
-              Process.send_after(self(), {:clear_login_lock, user37}, 10_000)
 
             :no ->
+              Process.exit(lock_pid, :kill)
               RsEther.WorldLink.send_to_rust({:login_check_response, user37, false})
           end
         end
@@ -119,11 +121,6 @@ defmodule RsEther.WorldLink do
     end
 
     :inet.setopts(socket, active: :once)
-    {:noreply, state}
-  end
-
-  def handle_info({:clear_login_lock, user37}, state) do
-    :global.unregister_name({:login_lock, user37})
     {:noreply, state}
   end
 
