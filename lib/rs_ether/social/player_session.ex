@@ -161,6 +161,19 @@ defmodule RsEther.Social.PlayerSession do
     {:noreply, state}
   end
 
+  # Full resync after the database was unavailable: reload the lists (they may
+  # have been loaded empty while the DB was down), re-send this player's friend
+  # presence, and rebroadcast our own presence to everyone who lists us. Driven
+  # by RsEther.DbMonitor on database recovery.
+  def handle_cast(:resync, state) do
+    friends = RsEther.Social.FriendStore.list(state.user37)
+    ignores = RsEther.Social.IgnoreStore.list(state.user37)
+    state = %{state | friends: friends, ignores: ignores}
+    send_friend_updates(state)
+    send_ignore_list(state)
+    {:noreply, state}
+  end
+
   def handle_cast({:friend_online, friend37, node_id}, state) do
     if friend37 in state.friends do
       RsEther.WorldLink.send_to_rust({:friend_update, state.user37, friend37, node_id})

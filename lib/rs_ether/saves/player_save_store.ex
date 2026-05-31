@@ -1,6 +1,9 @@
 defmodule RsEther.Saves.PlayerSaveStore do
   @moduledoc """
   Postgres CRUD for player saves. Stub for future implementation.
+
+  Backed by the `ether_player_saves` table -- rs-engine owns `player_saves` in
+  the shared database, so the ether blob saves live under a separate name.
   """
   import Ecto.Query
   alias RsEther.Repo
@@ -9,7 +12,7 @@ defmodule RsEther.Saves.PlayerSaveStore do
     use Ecto.Schema
 
     @primary_key {:user_hash, :integer, autogenerate: false}
-    schema "player_saves" do
+    schema "ether_player_saves" do
       field :save_data, :binary
       field :updated_at, :utc_datetime_usec
     end
