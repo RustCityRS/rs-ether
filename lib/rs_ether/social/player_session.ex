@@ -24,9 +24,15 @@ defmodule RsEther.Social.PlayerSession do
     pid = Keyword.fetch!(opts, :pid)
     node_id = Keyword.fetch!(opts, :node_id)
     private_mode = Keyword.get(opts, :private_mode, 0)
+    ip = Keyword.get(opts, :ip, "")
 
     :pg.join(@pg_scope, {:player, user37}, self())
     :global.unregister_name({:login_lock, user37})
+
+    if ip != "" do
+      :pg.join(@pg_scope, {:ip, ip, user37}, self())
+      :global.unregister_name({:ip_lock, ip, user37})
+    end
 
     state = %{
       user37: user37,
@@ -34,7 +40,8 @@ defmodule RsEther.Social.PlayerSession do
       node_id: node_id,
       friends: [],
       ignores: [],
-      private_mode: private_mode
+      private_mode: private_mode,
+      ip: ip
     }
 
     {:ok, state, {:continue, :load_lists}}
@@ -190,6 +197,23 @@ defmodule RsEther.Social.PlayerSession do
     {:noreply, state}
   end
 
+  def handle_cast({:update_ip, new_ip}, %{ip: old_ip} = state) when new_ip != old_ip do
+    if old_ip != "" do
+      :pg.leave(@pg_scope, {:ip, old_ip, state.user37}, self())
+    end
+
+    if new_ip != "" do
+      :pg.join(@pg_scope, {:ip, new_ip, state.user37}, self())
+      :global.unregister_name({:ip_lock, new_ip, state.user37})
+    end
+
+    {:noreply, %{state | ip: new_ip}}
+  end
+
+  def handle_cast({:update_ip, _same}, state) do
+    {:noreply, state}
+  end
+
   def handle_cast(:logout, state) do
     {:stop, :normal, state}
   end
@@ -197,6 +221,11 @@ defmodule RsEther.Social.PlayerSession do
   @impl true
   def terminate(_reason, state) do
     :pg.leave(@pg_scope, {:player, state.user37}, self())
+
+    if state.ip != "" do
+      :pg.leave(@pg_scope, {:ip, state.ip, state.user37}, self())
+    end
+
     broadcast_offline(state.user37)
     :ok
   end
@@ -251,7 +280,7 @@ defmodule RsEther.Social.PlayerSession do
         pid ->
           visible =
             state.private_mode == 0 or
-              (state.private_mode == 1 and target37 in state.friends)
+            (state.private_mode == 1 and target37 in state.friends)
 
           node = if visible, do: state.node_id, else: 0
           GenServer.cast(pid, {:friend_online, state.user37, node})
@@ -276,7 +305,7 @@ defmodule RsEther.Social.PlayerSession do
   def handle_call({:check_visibility, caller37}, _from, state) do
     visible =
       state.private_mode == 0 or
-        (state.private_mode == 1 and caller37 in state.friends)
+      (state.private_mode == 1 and caller37 in state.friends)
 
     node = if visible, do: state.node_id, else: 0
     {:reply, node, state}

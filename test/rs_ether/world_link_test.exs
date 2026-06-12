@@ -76,39 +76,74 @@ defmodule RsEther.WorldLinkTest do
   describe "login_check via TCP" do
     test "allows login when no session exists", %{client: client} do
       user37 = 77777
-      send_frame(client, <<11, user37::big-unsigned-64>>)
+      send_frame(client, <<11, user37::big-unsigned-64, 2::8, "10.0.0.1">>)
       response = recv_frame(client)
 
-      assert <<132, ^user37::big-unsigned-64, 1::8>> = response
+      assert <<132, ^user37::big-unsigned-64, 1::8, 0::8>> = response
     end
 
-    test "denies login when session already exists", %{client: client} do
+    test "denies login with reason 1 when session already exists", %{client: client} do
       user37 = 77778
-      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16>>)
+      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16, "10.0.0.2">>)
       Process.sleep(50)
 
-      send_frame(client, <<11, user37::big-unsigned-64>>)
+      send_frame(client, <<11, user37::big-unsigned-64, 2::8, "10.0.0.2">>)
       response = recv_frame(client)
 
-      assert <<132, ^user37::big-unsigned-64, 0::8>> = response
+      assert <<132, ^user37::big-unsigned-64, 0::8, 1::8>> = response
     end
 
-    test "denies login when lock is held by another process", %{client: client} do
+    test "denies login with reason 1 when lock is held by another process", %{client: client} do
       user37 = 77779
       :global.register_name({:login_lock, user37}, self())
 
-      send_frame(client, <<11, user37::big-unsigned-64>>)
+      send_frame(client, <<11, user37::big-unsigned-64, 2::8, "10.0.0.3">>)
       response = recv_frame(client)
 
-      assert <<132, ^user37::big-unsigned-64, 0::8>> = response
+      assert <<132, ^user37::big-unsigned-64, 0::8, 1::8>> = response
       :global.unregister_name({:login_lock, user37})
+    end
+
+    test "denies login with reason 2 when the IP session limit is reached", %{client: client} do
+      ip = "10.0.0.4"
+      send_frame(client, <<1, 66601::big-unsigned-64, 1::big-16, ip::binary>>)
+      send_frame(client, <<1, 66602::big-unsigned-64, 2::big-16, ip::binary>>)
+      Process.sleep(50)
+
+      send_frame(client, <<11, 66603::big-unsigned-64, 2::8, ip::binary>>)
+      assert <<132, 66603::big-unsigned-64, 0::8, 2::8>> = recv_frame(client)
+    end
+
+    test "allows login when sessions on the IP are below the limit", %{client: client} do
+      ip = "10.0.0.5"
+      send_frame(client, <<1, 66604::big-unsigned-64, 1::big-16, ip::binary>>)
+      send_frame(client, <<1, 66605::big-unsigned-64, 2::big-16, ip::binary>>)
+      Process.sleep(50)
+
+      send_frame(client, <<11, 66606::big-unsigned-64, 3::8, ip::binary>>)
+      assert <<132, 66606::big-unsigned-64, 1::8, 0::8>> = recv_frame(client)
+    end
+
+    test "login_abort releases locks so a new login_check succeeds", %{client: client} do
+      user37 = 77780
+      ip = "10.0.0.6"
+
+      send_frame(client, <<11, user37::big-unsigned-64, 2::8, ip::binary>>)
+      assert <<132, ^user37::big-unsigned-64, 1::8, 0::8>> = recv_frame(client)
+
+      send_frame(client, <<11, user37::big-unsigned-64, 2::8, ip::binary>>)
+      assert <<132, ^user37::big-unsigned-64, 0::8, 1::8>> = recv_frame(client)
+
+      send_frame(client, <<13, user37::big-unsigned-64, ip::binary>>)
+      send_frame(client, <<11, user37::big-unsigned-64, 2::8, ip::binary>>)
+      assert <<132, ^user37::big-unsigned-64, 1::8, 0::8>> = recv_frame(client)
     end
   end
 
   describe "player_resync via TCP" do
     test "starts session and triggers send_lists", %{client: client} do
       user37 = 88888
-      send_frame(client, <<10, user37::big-unsigned-64, 5::big-16, 0::8>>)
+      send_frame(client, <<10, user37::big-unsigned-64, 5::big-16, 0::8, "10.0.0.7">>)
       Process.sleep(100)
 
       assert [{_pid, _}] = Registry.lookup(RsEther.PlayerRegistry, user37)

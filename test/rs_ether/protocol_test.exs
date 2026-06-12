@@ -22,33 +22,39 @@ defmodule RsEther.ProtocolTest do
   # ── Decode: PlayerLogin (opcode 1) ──
 
   describe "decode player_login" do
-    test "decodes user37 and pid" do
+    test "decodes user37, pid, and ip" do
       user37 = 123_456_789
       pid = 500
+      ip = "127.0.0.1"
 
-      payload = <<1, user37::big-unsigned-64, pid::big-16>>
-      assert {:player_login, ^user37, ^pid} = Protocol.decode(payload)
+      payload = <<1, user37::big-unsigned-64, pid::big-16, ip::binary>>
+      assert {:player_login, ^user37, ^pid, ^ip} = Protocol.decode(payload)
+    end
+
+    test "decodes missing ip as empty string" do
+      payload = <<1, 42::big-unsigned-64, 1::big-16>>
+      assert {:player_login, 42, 1, ""} = Protocol.decode(payload)
     end
 
     test "decodes zero user37" do
-      payload = <<1, 0::big-unsigned-64, 1::big-16>>
-      assert {:player_login, 0, 1} = Protocol.decode(payload)
+      payload = <<1, 0::big-unsigned-64, 1::big-16, "1.2.3.4">>
+      assert {:player_login, 0, 1, "1.2.3.4"} = Protocol.decode(payload)
     end
 
     test "decodes max u64 user37" do
       max_u64 = 0xFFFFFFFFFFFFFFFF
-      payload = <<1, max_u64::big-unsigned-64, 100::big-16>>
-      assert {:player_login, ^max_u64, 100} = Protocol.decode(payload)
+      payload = <<1, max_u64::big-unsigned-64, 100::big-16, "1.2.3.4">>
+      assert {:player_login, ^max_u64, 100, "1.2.3.4"} = Protocol.decode(payload)
     end
 
     test "decodes max u16 pid" do
-      payload = <<1, 42::big-unsigned-64, 65535::big-16>>
-      assert {:player_login, 42, 65535} = Protocol.decode(payload)
+      payload = <<1, 42::big-unsigned-64, 65535::big-16, "1.2.3.4">>
+      assert {:player_login, 42, 65535, "1.2.3.4"} = Protocol.decode(payload)
     end
 
     test "decodes zero pid" do
-      payload = <<1, 42::big-unsigned-64, 0::big-16>>
-      assert {:player_login, 42, 0} = Protocol.decode(payload)
+      payload = <<1, 42::big-unsigned-64, 0::big-16, "1.2.3.4">>
+      assert {:player_login, 42, 0, "1.2.3.4"} = Protocol.decode(payload)
     end
   end
 
@@ -201,27 +207,37 @@ defmodule RsEther.ProtocolTest do
   # ── Decode: PlayerResync (opcode 10) ──
 
   describe "decode player_resync" do
-    test "decodes user37, pid, and private_mode" do
+    test "decodes user37, pid, private_mode, and ip" do
       user37 = 777
       pid = 42
       mode = 1
-      payload = <<10, user37::big-unsigned-64, pid::big-16, mode::8>>
-      assert {:player_resync, ^user37, ^pid, ^mode} = Protocol.decode(payload)
+      ip = "192.168.0.1"
+      payload = <<10, user37::big-unsigned-64, pid::big-16, mode::8, ip::binary>>
+      assert {:player_resync, ^user37, ^pid, ^mode, ^ip} = Protocol.decode(payload)
     end
 
-    test "decodes with zero values" do
+    test "decodes with zero values and missing ip" do
       payload = <<10, 0::big-unsigned-64, 0::big-16, 0::8>>
-      assert {:player_resync, 0, 0, 0} = Protocol.decode(payload)
+      assert {:player_resync, 0, 0, 0, ""} = Protocol.decode(payload)
     end
   end
 
   # ── Decode: LoginCheck (opcode 11) ──
 
   describe "decode login_check" do
-    test "decodes user37" do
+    test "decodes user37, max_per_ip, and ip" do
       user37 = 55555
-      payload = <<11, user37::big-unsigned-64>>
-      assert {:login_check, ^user37} = Protocol.decode(payload)
+      payload = <<11, user37::big-unsigned-64, 2::8, "10.0.0.1">>
+      assert {:login_check, ^user37, 2, "10.0.0.1"} = Protocol.decode(payload)
+    end
+
+    test "decodes missing ip as empty string" do
+      payload = <<11, 55555::big-unsigned-64, 0::8>>
+      assert {:login_check, 55555, 0, ""} = Protocol.decode(payload)
+    end
+
+    test "returns :unknown for legacy payload without max_per_ip" do
+      assert :unknown = Protocol.decode(<<11, 55555::big-unsigned-64>>)
     end
   end
 
@@ -230,6 +246,21 @@ defmodule RsEther.ProtocolTest do
   describe "decode refresh_all" do
     test "decodes single byte" do
       assert :refresh_all = Protocol.decode(<<12>>)
+    end
+  end
+
+  # ── Decode: LoginAbort (opcode 13) ──
+
+  describe "decode login_abort" do
+    test "decodes user37 and ip" do
+      user37 = 4242
+      payload = <<13, user37::big-unsigned-64, "10.0.0.2">>
+      assert {:login_abort, ^user37, "10.0.0.2"} = Protocol.decode(payload)
+    end
+
+    test "decodes missing ip as empty string" do
+      payload = <<13, 4242::big-unsigned-64>>
+      assert {:login_abort, 4242, ""} = Protocol.decode(payload)
     end
   end
 
@@ -244,8 +275,8 @@ defmodule RsEther.ProtocolTest do
       assert :unknown = Protocol.decode(<<>>)
     end
 
-    test "returns :unknown for opcode 13 (first unused)" do
-      assert :unknown = Protocol.decode(<<13, 0::64>>)
+    test "returns :unknown for opcode 14 (first unused)" do
+      assert :unknown = Protocol.decode(<<14, 0::64>>)
     end
 
     test "returns :unknown for opcode 127 (gap before elixir opcodes)" do
@@ -386,19 +417,24 @@ defmodule RsEther.ProtocolTest do
   # ── Encode: LoginCheckResponse (opcode 132) ──
 
   describe "encode login_check_response" do
-    test "encodes allowed=true as byte 1" do
-      result = Protocol.encode({:login_check_response, 42, true})
-      assert <<132, 42::big-unsigned-64, 1::8>> = result
+    test "encodes allowed=true as byte 1 with reason 0" do
+      result = Protocol.encode({:login_check_response, 42, true, 0})
+      assert <<132, 42::big-unsigned-64, 1::8, 0::8>> = result
     end
 
-    test "encodes allowed=false as byte 0" do
-      result = Protocol.encode({:login_check_response, 42, false})
-      assert <<132, 42::big-unsigned-64, 0::8>> = result
+    test "encodes allowed=false with reason 1 (already online)" do
+      result = Protocol.encode({:login_check_response, 42, false, 1})
+      assert <<132, 42::big-unsigned-64, 0::8, 1::8>> = result
     end
 
-    test "produces correct byte size (1 + 8 + 1 = 10)" do
-      result = Protocol.encode({:login_check_response, 1, true})
-      assert byte_size(result) == 10
+    test "encodes allowed=false with reason 2 (IP session limit)" do
+      result = Protocol.encode({:login_check_response, 42, false, 2})
+      assert <<132, 42::big-unsigned-64, 0::8, 2::8>> = result
+    end
+
+    test "produces correct byte size (1 + 8 + 1 + 1 = 11)" do
+      result = Protocol.encode({:login_check_response, 1, true, 0})
+      assert byte_size(result) == 11
     end
   end
 
@@ -429,7 +465,7 @@ defmodule RsEther.ProtocolTest do
         {:ignore_list_full, 1, [2, 3]},
         {:pm_deliver, 1, 2, 0, 1, "hi"},
         {:friend_list_complete, 1},
-        {:login_check_response, 1, true},
+        {:login_check_response, 1, true, 0},
         :world_ready
       ]
 
@@ -439,7 +475,7 @@ defmodule RsEther.ProtocolTest do
       end
     end
 
-    test "all decode opcodes are in 0-12 range" do
+    test "all decode opcodes are in 0-13 range" do
       valid_payloads = [
         <<0, 10>>,
         <<1, 0::64, 0::16>>,
@@ -452,8 +488,9 @@ defmodule RsEther.ProtocolTest do
         <<8, 0::64>>,
         <<9, 0::64, 0::8>>,
         <<10, 0::64, 0::16, 0::8>>,
-        <<11, 0::64>>,
-        <<12>>
+        <<11, 0::64, 0::8>>,
+        <<12>>,
+        <<13, 0::64>>
       ]
 
       results = Enum.map(valid_payloads, &Protocol.decode/1)

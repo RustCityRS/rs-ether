@@ -18,6 +18,7 @@ defmodule RsEther.Protocol do
   @op_player_resync 10
   @op_login_check 11
   @op_refresh_all 12
+  @op_login_abort 13
 
   # Elixir -> Rust opcodes
   @op_friend_update 128
@@ -33,8 +34,8 @@ defmodule RsEther.Protocol do
     {:world_register, node_id}
   end
 
-  def decode(<<@op_player_login, user37::big-unsigned-64, pid::big-16>>) do
-    {:player_login, user37, pid}
+  def decode(<<@op_player_login, user37::big-unsigned-64, pid::big-16, ip::binary>>) do
+    {:player_login, user37, pid, ip}
   end
 
   def decode(<<@op_player_logout, user37::big-unsigned-64>>) do
@@ -69,16 +70,22 @@ defmodule RsEther.Protocol do
     {:chat_mode_update, user37, private_mode}
   end
 
-  def decode(<<@op_player_resync, user37::big-unsigned-64, pid::big-16, private_mode::8>>) do
-    {:player_resync, user37, pid, private_mode}
+  def decode(
+        <<@op_player_resync, user37::big-unsigned-64, pid::big-16, private_mode::8, ip::binary>>
+      ) do
+    {:player_resync, user37, pid, private_mode, ip}
   end
 
-  def decode(<<@op_login_check, user37::big-unsigned-64>>) do
-    {:login_check, user37}
+  def decode(<<@op_login_check, user37::big-unsigned-64, max_per_ip::8, ip::binary>>) do
+    {:login_check, user37, max_per_ip, ip}
   end
 
   def decode(<<@op_refresh_all>>) do
     :refresh_all
+  end
+
+  def decode(<<@op_login_abort, user37::big-unsigned-64, ip::binary>>) do
+    {:login_abort, user37, ip}
   end
 
   def decode(_unknown), do: :unknown
@@ -104,9 +111,10 @@ defmodule RsEther.Protocol do
     <<@op_friend_list_complete, target37::big-unsigned-64>>
   end
 
-  def encode({:login_check_response, user37, allowed}) do
+  # reason: 0 = allowed, 1 = account already online, 2 = IP session limit.
+  def encode({:login_check_response, user37, allowed, reason}) do
     allowed_byte = if allowed, do: 1, else: 0
-    <<@op_login_check_response, user37::big-unsigned-64, allowed_byte::8>>
+    <<@op_login_check_response, user37::big-unsigned-64, allowed_byte::8, reason::8>>
   end
 
   def encode(:world_ready) do

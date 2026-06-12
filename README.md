@@ -51,14 +51,14 @@ The `node: u8` field in `UpdateFriendList` uses the node ID (10, 11, etc.) for o
 ┌──────────────────┐    ┌──────┴───────┐ ┌────┴─────────┐ ┌──┴────────────┐
 │  Game Client     │    │  Elixir      │ │  Elixir      │ │  Elixir       │
 │  (browser/java)  │    │  world10@    │ │  world11@    │ │  world12@     │
-└────────┬─────────┘    └──────┬───────┘ └────┬─────────┘ └───┬───────────┘
-         │                     │ localhost TCP  │             │
+└────────┬─────────┘    └──────┬───────┘ └─────┬────────┘ └───┬───────────┘
+         │                     │ localhost TCP │              │
          │ TCP/WebSocket       │               │              │
          │                ┌────┴─────────┐ ┌───┴──────────┐ ┌─┴────────────┐
          └───────────────►│  Rust World 1│ │  Rust World 2│ │  Rust World 3│
                           │  :43594      │ │  :43595      │ │  :43596      │
                           │  http:8080   │ │  http:8081   │ │  http:8082   │
-                          └──────────────┘ └──────────────┘ └──────────────┘
+                          └──────────────┘ └────┬─────────┘ └──────────────┘
                                                 │
                                          ┌──────┴──────┐
                                          │  Postgres   │
@@ -322,23 +322,25 @@ All hash fields (`user37`, `owner37`, `friend37`, etc.) are unsigned 64-bit big-
 
 ### Rust -> Elixir (Outbound)
 
-| Op | Name              | Payload                                                |
-|----|-------------------|--------------------------------------------------------|
-| 0  | WorldRegister     | `node_id: u8`                                          |
-| 1  | PlayerLogin       | `user37: u64, pid: u16`                                |
-| 2  | PlayerLogout      | `user37: u64`                                          |
-| 3  | FriendAdd         | `owner37: u64, friend37: u64`                          |
-| 4  | FriendDel         | `owner37: u64, friend37: u64`                          |
-| 5  | IgnoreAdd         | `owner37: u64, ignore37: u64`                          |
-| 6  | IgnoreDel         | `owner37: u64, ignore37: u64`                          |
-| 7  | PrivateMessage    | `sender37: u64, target37: u64, level: u8, bytes: [u8]` |
-| 8  | RequestLists      | `user37: u64`                                          |
-| 9  | ChatModeUpdate    | `user37: u64, private_mode: u8`                        |
-| 10 | PlayerSaveRequest | `user37: u64, save_data: [u8]` (stub)                  |
-| 11 | PlayerLoadRequest | `user37: u64` (stub)                                   |
-| 12 | PlayerResync      | `user37: u64, pid: u16, private_mode: u8`              |
-| 13 | LoginCheck        | `user37: u64`                                          |
-| 14 | RefreshAll        | (empty)                                                |
+| Op | Name           | Payload                                                |
+|----|----------------|--------------------------------------------------------|
+| 0  | WorldRegister  | `node_id: u8`                                          |
+| 1  | PlayerLogin    | `user37: u64, pid: u16, ip: [u8]`                      |
+| 2  | PlayerLogout   | `user37: u64`                                          |
+| 3  | FriendAdd      | `owner37: u64, friend37: u64`                          |
+| 4  | FriendDel      | `owner37: u64, friend37: u64`                          |
+| 5  | IgnoreAdd      | `owner37: u64, ignore37: u64`                          |
+| 6  | IgnoreDel      | `owner37: u64, ignore37: u64`                          |
+| 7  | PrivateMessage | `sender37: u64, target37: u64, level: u8, bytes: [u8]` |
+| 8  | RequestLists   | `user37: u64`                                          |
+| 9  | ChatModeUpdate | `user37: u64, private_mode: u8`                        |
+| 10 | PlayerResync   | `user37: u64, pid: u16, private_mode: u8, ip: [u8]`    |
+| 11 | LoginCheck     | `user37: u64, max_per_ip: u8, ip: [u8]`                |
+| 12 | RefreshAll     | (empty)                                                |
+| 13 | LoginAbort     | `user37: u64, ip: [u8]`                                |
+
+`ip` is the player's address as raw bytes at the end of the frame; an absent ip decodes as
+empty and disables per-IP tracking for that message.
 
 ### Elixir -> Rust (Inbound)
 
@@ -348,9 +350,14 @@ All hash fields (`user37`, `owner37`, `friend37`, etc.) are unsigned 64-bit big-
 | 129 | UpdateIgnoreList   | `target37: u64, count: u16, [ignore37: u64, ...]`                      |
 | 130 | MessagePrivate     | `recipient37: u64, sender37: u64, msg_id: i32, level: u8, bytes: [u8]` |
 | 131 | FriendListComplete | `target37: u64`                                                        |
-| 132 | PlayerLoadResponse | `user37: u64, save_data: [u8]` (stub)                                  |
-| 133 | PlayerSaveAck      | `user37: u64, success: u8` (stub)                                      |
-| 134 | LoginCheckResponse | `user37: u64, allowed: u8`                                             |
+| 132 | LoginCheckResponse | `user37: u64, allowed: u8, reason: u8`                                 |
+| 133 | WorldReady         | (empty)                                                                |
+
+`LoginCheckResponse` reason codes: `0` = allowed, `1` = account already online, `2` = IP
+session limit reached.
+
+Planned save opcodes (not yet on the wire): `PlayerLoadResponse` (`user37: u64, save_data: [u8]`)
+and `PlayerSaveAck` (`user37: u64, success: u8`).
 
 ### Internal (not on wire)
 

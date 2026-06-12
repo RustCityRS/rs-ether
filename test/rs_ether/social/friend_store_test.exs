@@ -39,7 +39,7 @@ defmodule RsEther.Social.FriendStoreTest do
       assert @friend1 in FriendStore.list(@owner)
     end
 
-    test "duplicate add is idempotent (on_conflict: :nothing)" do
+    test "duplicate add is idempotent" do
       FriendStore.add(@owner, @friend1)
       FriendStore.add(@owner, @friend1)
 
@@ -74,7 +74,7 @@ defmodule RsEther.Social.FriendStoreTest do
     end
 
     test "removing non-existent friend is a no-op" do
-      assert {0, nil} = FriendStore.remove(@owner, 99999)
+      assert %Postgrex.Result{command: :update, num_rows: 0} = FriendStore.remove(@owner, 99999)
     end
 
     test "only removes the specified friend" do

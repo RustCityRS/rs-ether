@@ -73,7 +73,7 @@ defmodule RsEther.Social.IgnoreStoreTest do
     end
 
     test "removing non-existent ignore is a no-op" do
-      assert {0, nil} = IgnoreStore.remove(@owner, 99998)
+      assert %Postgrex.Result{command: :update, num_rows: 0} = IgnoreStore.remove(@owner, 99998)
     end
 
     test "only removes the specified ignore" do
