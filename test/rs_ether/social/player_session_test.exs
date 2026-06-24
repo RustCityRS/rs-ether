@@ -31,7 +31,7 @@ defmodule RsEther.Social.PlayerSessionTest do
         DynamicSupervisor.start_child(
           RsEther.SessionSupervisor,
           {RsEther.Social.PlayerSession,
-           user37: @user1, pid: 1, node_id: 10, private_mode: 0}
+            user37: @user1, pid: 1, node_id: 10, private_mode: 0}
         )
 
       assert {:error, {:already_started, _}} = result
@@ -131,6 +131,24 @@ defmodule RsEther.Social.PlayerSessionTest do
       Process.sleep(50)
 
       assert @user2 in FriendStore.list(@user1)
+    end
+
+    test "rejects friends beyond the per-player max_friends cap" do
+      start_session(@user1, max_friends: 2)
+      drain_rust_messages()
+
+      session = find_session(@user1)
+      GenServer.cast(session, {:friend_add, @user2})
+      GenServer.cast(session, {:friend_add, @user3})
+      # third add exceeds the cap of 2 and must be dropped
+      GenServer.cast(session, {:friend_add, 10004})
+      Process.sleep(50)
+
+      friends = FriendStore.list(@user1)
+      assert @user2 in friends
+      assert @user3 in friends
+      refute 10004 in friends
+      assert length(friends) == 2
     end
 
     test "sends friend_update to Rust with presence" do

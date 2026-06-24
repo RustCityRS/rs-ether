@@ -22,39 +22,40 @@ defmodule RsEther.ProtocolTest do
   # ── Decode: PlayerLogin (opcode 1) ──
 
   describe "decode player_login" do
-    test "decodes user37, pid, and ip" do
+    test "decodes user37, pid, max_friends, and ip" do
       user37 = 123_456_789
       pid = 500
+      max_friends = 100
       ip = "127.0.0.1"
 
-      payload = <<1, user37::big-unsigned-64, pid::big-16, ip::binary>>
-      assert {:player_login, ^user37, ^pid, ^ip} = Protocol.decode(payload)
+      payload = <<1, user37::big-unsigned-64, pid::big-16, max_friends::big-16, ip::binary>>
+      assert {:player_login, ^user37, ^pid, ^max_friends, ^ip} = Protocol.decode(payload)
     end
 
     test "decodes missing ip as empty string" do
-      payload = <<1, 42::big-unsigned-64, 1::big-16>>
-      assert {:player_login, 42, 1, ""} = Protocol.decode(payload)
+      payload = <<1, 42::big-unsigned-64, 1::big-16, 200::big-16>>
+      assert {:player_login, 42, 1, 200, ""} = Protocol.decode(payload)
     end
 
     test "decodes zero user37" do
-      payload = <<1, 0::big-unsigned-64, 1::big-16, "1.2.3.4">>
-      assert {:player_login, 0, 1, "1.2.3.4"} = Protocol.decode(payload)
+      payload = <<1, 0::big-unsigned-64, 1::big-16, 200::big-16, "1.2.3.4">>
+      assert {:player_login, 0, 1, 200, "1.2.3.4"} = Protocol.decode(payload)
     end
 
     test "decodes max u64 user37" do
       max_u64 = 0xFFFFFFFFFFFFFFFF
-      payload = <<1, max_u64::big-unsigned-64, 100::big-16, "1.2.3.4">>
-      assert {:player_login, ^max_u64, 100, "1.2.3.4"} = Protocol.decode(payload)
+      payload = <<1, max_u64::big-unsigned-64, 100::big-16, 200::big-16, "1.2.3.4">>
+      assert {:player_login, ^max_u64, 100, 200, "1.2.3.4"} = Protocol.decode(payload)
     end
 
     test "decodes max u16 pid" do
-      payload = <<1, 42::big-unsigned-64, 65535::big-16, "1.2.3.4">>
-      assert {:player_login, 42, 65535, "1.2.3.4"} = Protocol.decode(payload)
+      payload = <<1, 42::big-unsigned-64, 65535::big-16, 200::big-16, "1.2.3.4">>
+      assert {:player_login, 42, 65535, 200, "1.2.3.4"} = Protocol.decode(payload)
     end
 
     test "decodes zero pid" do
-      payload = <<1, 42::big-unsigned-64, 0::big-16, "1.2.3.4">>
-      assert {:player_login, 42, 0, "1.2.3.4"} = Protocol.decode(payload)
+      payload = <<1, 42::big-unsigned-64, 0::big-16, 200::big-16, "1.2.3.4">>
+      assert {:player_login, 42, 0, 200, "1.2.3.4"} = Protocol.decode(payload)
     end
   end
 
@@ -207,18 +208,19 @@ defmodule RsEther.ProtocolTest do
   # ── Decode: PlayerResync (opcode 10) ──
 
   describe "decode player_resync" do
-    test "decodes user37, pid, private_mode, and ip" do
+    test "decodes user37, pid, private_mode, max_friends, and ip" do
       user37 = 777
       pid = 42
       mode = 1
+      max_friends = 100
       ip = "192.168.0.1"
-      payload = <<10, user37::big-unsigned-64, pid::big-16, mode::8, ip::binary>>
-      assert {:player_resync, ^user37, ^pid, ^mode, ^ip} = Protocol.decode(payload)
+      payload = <<10, user37::big-unsigned-64, pid::big-16, mode::8, max_friends::big-16, ip::binary>>
+      assert {:player_resync, ^user37, ^pid, ^mode, ^max_friends, ^ip} = Protocol.decode(payload)
     end
 
     test "decodes with zero values and missing ip" do
-      payload = <<10, 0::big-unsigned-64, 0::big-16, 0::8>>
-      assert {:player_resync, 0, 0, 0, ""} = Protocol.decode(payload)
+      payload = <<10, 0::big-unsigned-64, 0::big-16, 0::8, 200::big-16>>
+      assert {:player_resync, 0, 0, 0, 200, ""} = Protocol.decode(payload)
     end
   end
 
@@ -478,7 +480,7 @@ defmodule RsEther.ProtocolTest do
     test "all decode opcodes are in 0-13 range" do
       valid_payloads = [
         <<0, 10>>,
-        <<1, 0::64, 0::16>>,
+        <<1, 0::64, 0::16, 0::16>>,
         <<2, 0::64>>,
         <<3, 0::64, 0::64>>,
         <<4, 0::64, 0::64>>,
@@ -487,7 +489,7 @@ defmodule RsEther.ProtocolTest do
         <<7, 0::64, 0::64, 0::8>>,
         <<8, 0::64>>,
         <<9, 0::64, 0::8>>,
-        <<10, 0::64, 0::16, 0::8>>,
+        <<10, 0::64, 0::16, 0::8, 0::16>>,
         <<11, 0::64, 0::8>>,
         <<12>>,
         <<13, 0::64>>

@@ -37,7 +37,7 @@ defmodule RsEther.WorldLinkTest do
   describe "player_login via TCP" do
     test "starts a player session", %{client: client} do
       user37 = 12345
-      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16>>)
+      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16, 200::big-16>>)
       Process.sleep(50)
 
       assert [{_pid, _}] = Registry.lookup(RsEther.PlayerRegistry, user37)
@@ -45,9 +45,9 @@ defmodule RsEther.WorldLinkTest do
 
     test "duplicate login returns already_started gracefully", %{client: client} do
       user37 = 12346
-      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16>>)
+      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16, 200::big-16>>)
       Process.sleep(50)
-      send_frame(client, <<1, user37::big-unsigned-64, 2::big-16>>)
+      send_frame(client, <<1, user37::big-unsigned-64, 2::big-16, 200::big-16>>)
       Process.sleep(50)
 
       assert [{_pid, _}] = Registry.lookup(RsEther.PlayerRegistry, user37)
@@ -57,7 +57,7 @@ defmodule RsEther.WorldLinkTest do
   describe "player_logout via TCP" do
     test "stops the player session", %{client: client} do
       user37 = 12347
-      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16>>)
+      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16, 200::big-16>>)
       Process.sleep(50)
 
       send_frame(client, <<2, user37::big-unsigned-64>>)
@@ -84,7 +84,7 @@ defmodule RsEther.WorldLinkTest do
 
     test "denies login with reason 1 when session already exists", %{client: client} do
       user37 = 77778
-      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16, "10.0.0.2">>)
+      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16, 200::big-16, "10.0.0.2">>)
       Process.sleep(50)
 
       send_frame(client, <<11, user37::big-unsigned-64, 2::8, "10.0.0.2">>)
@@ -106,8 +106,8 @@ defmodule RsEther.WorldLinkTest do
 
     test "denies login with reason 2 when the IP session limit is reached", %{client: client} do
       ip = "10.0.0.4"
-      send_frame(client, <<1, 66601::big-unsigned-64, 1::big-16, ip::binary>>)
-      send_frame(client, <<1, 66602::big-unsigned-64, 2::big-16, ip::binary>>)
+      send_frame(client, <<1, 66601::big-unsigned-64, 1::big-16, 200::big-16, ip::binary>>)
+      send_frame(client, <<1, 66602::big-unsigned-64, 2::big-16, 200::big-16, ip::binary>>)
       Process.sleep(50)
 
       send_frame(client, <<11, 66603::big-unsigned-64, 2::8, ip::binary>>)
@@ -116,8 +116,8 @@ defmodule RsEther.WorldLinkTest do
 
     test "allows login when sessions on the IP are below the limit", %{client: client} do
       ip = "10.0.0.5"
-      send_frame(client, <<1, 66604::big-unsigned-64, 1::big-16, ip::binary>>)
-      send_frame(client, <<1, 66605::big-unsigned-64, 2::big-16, ip::binary>>)
+      send_frame(client, <<1, 66604::big-unsigned-64, 1::big-16, 200::big-16, ip::binary>>)
+      send_frame(client, <<1, 66605::big-unsigned-64, 2::big-16, 200::big-16, ip::binary>>)
       Process.sleep(50)
 
       send_frame(client, <<11, 66606::big-unsigned-64, 3::8, ip::binary>>)
@@ -143,7 +143,7 @@ defmodule RsEther.WorldLinkTest do
   describe "player_resync via TCP" do
     test "starts session and triggers send_lists", %{client: client} do
       user37 = 88888
-      send_frame(client, <<10, user37::big-unsigned-64, 5::big-16, 0::8, "10.0.0.7">>)
+      send_frame(client, <<10, user37::big-unsigned-64, 5::big-16, 0::8, 200::big-16, "10.0.0.7">>)
       Process.sleep(100)
 
       assert [{_pid, _}] = Registry.lookup(RsEther.PlayerRegistry, user37)
@@ -153,7 +153,7 @@ defmodule RsEther.WorldLinkTest do
   describe "refresh_all via TCP" do
     test "casts refresh to all sessions", %{client: client} do
       user37 = 55555
-      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16>>)
+      send_frame(client, <<1, user37::big-unsigned-64, 1::big-16, 200::big-16>>)
       Process.sleep(50)
 
       send_frame(client, <<12>>)

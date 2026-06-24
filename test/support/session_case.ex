@@ -31,12 +31,17 @@ defmodule RsEther.SessionCase do
       pid = Keyword.get(opts, :pid, 1)
       node_id = Keyword.get(opts, :node_id, 10)
       private_mode = Keyword.get(opts, :private_mode, 0)
+      max_friends = Keyword.get(opts, :max_friends, 200)
 
       {:ok, session} =
         DynamicSupervisor.start_child(
           RsEther.SessionSupervisor,
           {RsEther.Social.PlayerSession,
-           user37: user37, pid: pid, node_id: node_id, private_mode: private_mode}
+            user37: user37,
+            pid: pid,
+            node_id: node_id,
+            private_mode: private_mode,
+            max_friends: max_friends}
         )
 
       allow_session_init()

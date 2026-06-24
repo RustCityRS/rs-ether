@@ -25,6 +25,7 @@ defmodule RsEther.Social.PlayerSession do
     node_id = Keyword.fetch!(opts, :node_id)
     private_mode = Keyword.get(opts, :private_mode, 0)
     ip = Keyword.get(opts, :ip, "")
+    max_friends = Keyword.get(opts, :max_friends, @max_friends)
 
     :pg.join(@pg_scope, {:player, user37}, self())
     :global.unregister_name({:login_lock, user37})
@@ -41,6 +42,7 @@ defmodule RsEther.Social.PlayerSession do
       friends: [],
       ignores: [],
       private_mode: private_mode,
+      max_friends: max_friends,
       ip: ip
     }
 
@@ -63,7 +65,7 @@ defmodule RsEther.Social.PlayerSession do
   end
 
   def handle_cast({:friend_add, friend37}, state) do
-    if length(state.friends) >= @max_friends do
+    if length(state.friends) >= state.max_friends do
       {:noreply, state}
     else
       if friend37 in state.friends do

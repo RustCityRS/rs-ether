@@ -34,8 +34,10 @@ defmodule RsEther.Protocol do
     {:world_register, node_id}
   end
 
-  def decode(<<@op_player_login, user37::big-unsigned-64, pid::big-16, ip::binary>>) do
-    {:player_login, user37, pid, ip}
+  def decode(
+        <<@op_player_login, user37::big-unsigned-64, pid::big-16, max_friends::big-16, ip::binary>>
+      ) do
+    {:player_login, user37, pid, max_friends, ip}
   end
 
   def decode(<<@op_player_logout, user37::big-unsigned-64>>) do
@@ -71,9 +73,10 @@ defmodule RsEther.Protocol do
   end
 
   def decode(
-        <<@op_player_resync, user37::big-unsigned-64, pid::big-16, private_mode::8, ip::binary>>
+        <<@op_player_resync, user37::big-unsigned-64, pid::big-16, private_mode::8,
+          max_friends::big-16, ip::binary>>
       ) do
-    {:player_resync, user37, pid, private_mode, ip}
+    {:player_resync, user37, pid, private_mode, max_friends, ip}
   end
 
   def decode(<<@op_login_check, user37::big-unsigned-64, max_per_ip::8, ip::binary>>) do

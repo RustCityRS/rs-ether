@@ -63,8 +63,8 @@ defmodule RsEther.WorldLink do
         payload = RsEther.Protocol.encode(:world_ready)
         :gen_tcp.send(socket, payload)
 
-      {:player_login, user37, pid, ip} ->
-        start_session(user37, pid, state.node_id, 0, ip)
+      {:player_login, user37, pid, max_friends, ip} ->
+        start_session(user37, pid, state.node_id, 0, ip, max_friends)
         release_login_locks(user37, ip)
 
       {:player_logout, user37} ->
@@ -91,8 +91,8 @@ defmodule RsEther.WorldLink do
       {:chat_mode_update, user37, private_mode} ->
         dispatch_to_session(user37, {:chat_mode_update, private_mode})
 
-      {:player_resync, user37, pid, private_mode, ip} ->
-        start_session(user37, pid, state.node_id, private_mode, ip)
+      {:player_resync, user37, pid, private_mode, max_friends, ip} ->
+        start_session(user37, pid, state.node_id, private_mode, ip, max_friends)
         dispatch_to_session(user37, {:update_ip, ip})
         release_login_locks(user37, ip)
         dispatch_to_session(user37, :send_lists)
@@ -165,11 +165,16 @@ defmodule RsEther.WorldLink do
     {:noreply, state}
   end
 
-  defp start_session(user37, pid, node_id, private_mode, ip) do
+  defp start_session(user37, pid, node_id, private_mode, ip, max_friends) do
     case DynamicSupervisor.start_child(
            RsEther.SessionSupervisor,
            {RsEther.Social.PlayerSession,
-             user37: user37, pid: pid, node_id: node_id, private_mode: private_mode, ip: ip}
+             user37: user37,
+             pid: pid,
+             node_id: node_id,
+             private_mode: private_mode,
+             ip: ip,
+             max_friends: max_friends}
          ) do
       {:ok, _} -> :ok
       {:error, {:already_started, _}} -> :ok
