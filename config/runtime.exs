@@ -4,10 +4,12 @@ unless config_env() == :test do
 
 node_id = System.get_env("RS_NODE_ID", "10")
 ether_port = System.get_env("RS_ETHER_PORT", "5010")
+node_host = System.get_env("RS_NODE_HOST", "127.0.0.1")
 
 config :rs_ether,
   node_id: String.to_integer(node_id),
-  ether_port: String.to_integer(ether_port)
+  ether_port: String.to_integer(ether_port),
+  auto_migrate: System.get_env("RS_AUTO_MIGRATE", "true") == "true"
 
 config :rs_ether, RsEther.Repo,
   hostname: System.fetch_env!("RS_DB_HOST"),
@@ -24,7 +26,7 @@ hosts =
     |> String.split(",", trim: true)
     |> Enum.map(&String.to_atom/1)
   else
-    for id <- 10..20, do: :"world#{id}@127.0.0.1"
+    for id <- 10..20, do: :"world#{id}@#{node_host}"
   end
 
 config :libcluster,
