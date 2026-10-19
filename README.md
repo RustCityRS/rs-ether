@@ -304,7 +304,7 @@ cargo run -p rs-server -- --node-id 10
 - **Social:** friends, ignores, PMs, presence, chat mode visibility
 - **Login lock:** prevents duplicate logins across all worlds
 - **Resilience:** sidecar auto-restart, session resync on reconnect, cluster monitoring
-- **Future:** player saves, hiscores, trade history, moderation logs
+- **Future:** hiscores, trade history, moderation logs (player saves live in rs-majula's `rs-db`)
 
 ---
 
@@ -520,12 +520,10 @@ rs-ether/
       player_session.ex            # GenServer per online player (restart: :temporary)
       friend_store.ex              # Postgres CRUD for friends
       ignore_store.ex              # Postgres CRUD for ignores
-    saves/
-      player_save_store.ex         # Postgres CRUD for player saves (stub)
   priv/repo/migrations/
     20260518000001_create_friends.exs
     20260518000002_create_ignores.exs
-    20260518000003_create_player_saves.exs
+    20260531000001_restructure_social_lists.exs
 ```
 
 ### Supervision Tree
@@ -550,24 +548,16 @@ Application
 ```sql
 CREATE TABLE friends
 (
-    owner_hash  BIGINT NOT NULL,
-    friend_hash BIGINT NOT NULL,
-    PRIMARY KEY (owner_hash, friend_hash)
+    owner_hash    BIGINT PRIMARY KEY,
+    friend_hashes BIGINT[] NOT NULL DEFAULT '{}'
 );
-CREATE INDEX idx_friends_reverse ON friends (friend_hash);
+-- "Who has me as a friend": friend_hashes @> ARRAY[me]
+CREATE INDEX friends_friend_hashes_index ON friends USING GIN (friend_hashes);
 
 CREATE TABLE ignores
 (
-    owner_hash  BIGINT NOT NULL,
-    ignore_hash BIGINT NOT NULL,
-    PRIMARY KEY (owner_hash, ignore_hash)
-);
-
-CREATE TABLE player_saves
-(
-    user_hash  BIGINT PRIMARY KEY,
-    save_data  BYTEA       NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    owner_hash    BIGINT PRIMARY KEY,
+    ignore_hashes BIGINT[] NOT NULL DEFAULT '{}'
 );
 ```
 

@@ -11,23 +11,29 @@ defmodule RsEther.Application do
         ether_port = Application.fetch_env!(:rs_ether, :ether_port)
         topologies = Application.get_env(:libcluster, :topologies, [])
 
-        [
-          RsEther.Repo,
-          # Apply pending migrations on boot so the schema self-heals (mirrors
-          # the Rust side's ensure_tables on DB connect). Runs in the background
-          # and retries while the database is down, so a down DB degrades the
-          # social system but never stops the sidecar from booting.
-          RsEther.Migrator,
-          {Registry, keys: :unique, name: RsEther.PlayerRegistry},
-          %{id: :pg_social, start: {:pg, :start_link, [:social]}},
-          {DynamicSupervisor, name: RsEther.SessionSupervisor, strategy: :one_for_one},
-          {Cluster.Supervisor, [topologies, [name: RsEther.ClusterSupervisor]]},
-          RsEther.ClusterMonitor,
-          # Resyncs player presence across the cluster when the database recovers
-          # from an outage (statuses that changed while it was down).
-          RsEther.DbMonitor,
-          {RsEther.WorldLink, port: ether_port, node_id: node_id}
-        ]
+        # Apply pending migrations on boot so the schema self-heals. Runs in
+        # the background and retries while the database is down, so a down DB
+        # degrades the social system but never stops the sidecar from booting.
+        # Production turns this off and migrates as a deploy step instead
+        # (RsEther.Release.migrate/0).
+        migrator =
+          if Application.get_env(:rs_ether, :auto_migrate, true),
+            do: [RsEther.Migrator],
+            else: []
+
+        [RsEther.Repo] ++
+          migrator ++
+          [
+            {Registry, keys: :unique, name: RsEther.PlayerRegistry},
+            %{id: :pg_social, start: {:pg, :start_link, [:social]}},
+            {DynamicSupervisor, name: RsEther.SessionSupervisor, strategy: :one_for_one},
+            {Cluster.Supervisor, [topologies, [name: RsEther.ClusterSupervisor]]},
+            RsEther.ClusterMonitor,
+            # Resyncs player presence across the cluster when the database recovers
+            # from an outage (statuses that changed while it was down).
+            RsEther.DbMonitor,
+            {RsEther.WorldLink, port: ether_port, node_id: node_id}
+          ]
       end
 
     opts = [strategy: :one_for_one, name: RsEther.Supervisor]
