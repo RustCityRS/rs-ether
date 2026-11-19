@@ -32,6 +32,7 @@ defmodule RsEther.SessionCase do
       node_id = Keyword.get(opts, :node_id, 10)
       private_mode = Keyword.get(opts, :private_mode, 0)
       max_friends = Keyword.get(opts, :max_friends, 200)
+      lobby = Keyword.get(opts, :lobby, false)
 
       {:ok, session} =
         DynamicSupervisor.start_child(
@@ -41,7 +42,8 @@ defmodule RsEther.SessionCase do
             pid: pid,
             node_id: node_id,
             private_mode: private_mode,
-            max_friends: max_friends}
+            max_friends: max_friends,
+            lobby: lobby}
         )
 
       allow_session_init()

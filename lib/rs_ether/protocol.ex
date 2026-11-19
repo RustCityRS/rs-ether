@@ -19,6 +19,7 @@ defmodule RsEther.Protocol do
   @op_login_check 11
   @op_refresh_all 12
   @op_login_abort 13
+  @op_lobby_transfer 14
 
   # Elixir -> Rust opcodes
   @op_friend_update 128
@@ -27,8 +28,11 @@ defmodule RsEther.Protocol do
   @op_friend_list_complete 131
   @op_login_check_response 132
   @op_world_ready 133
+  @op_transfer_request 134
 
   # ── Decode (Rust -> Elixir) ──
+
+  def decode(<<@op_world_register, node_id::8, 1>>), do: {:lobby_register, node_id}
 
   def decode(<<@op_world_register, node_id::8>>) do
     {:world_register, node_id}
@@ -91,6 +95,10 @@ defmodule RsEther.Protocol do
     {:login_abort, user37, ip}
   end
 
+  def decode(<<@op_lobby_transfer, user37::big-unsigned-64, transfer::binary>>) when byte_size(transfer) > 11 do
+    {:lobby_transfer, user37, transfer}
+  end
+
   def decode(_unknown), do: :unknown
 
   # ── Encode (Elixir -> Rust) ──
@@ -114,10 +122,14 @@ defmodule RsEther.Protocol do
     <<@op_friend_list_complete, target37::big-unsigned-64>>
   end
 
-  # reason: 0 = allowed, 1 = account already online, 2 = IP session limit.
+  # reason: 0 = allowed, 1 = account already online, 2 = IP session limit, 3 = account in a lobby.
   def encode({:login_check_response, user37, allowed, reason}) do
     allowed_byte = if allowed, do: 1, else: 0
     <<@op_login_check_response, user37::big-unsigned-64, allowed_byte::8, reason::8>>
+  end
+
+  def encode({:lobby_transfer, user37, transfer}) do
+    <<@op_transfer_request, user37::big-unsigned-64, transfer::binary>>
   end
 
   def encode(:world_ready) do

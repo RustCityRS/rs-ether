@@ -28,11 +28,10 @@ defmodule RsEther.Social.PlayerSession do
     max_friends = Keyword.get(opts, :max_friends, @max_friends)
 
     :pg.join(@pg_scope, {:player, user37}, self())
-    :global.unregister_name({:login_lock, user37})
+    if Keyword.get(opts, :lobby, false), do: :pg.join(@pg_scope, {:lobby, user37}, self())
 
     if ip != "" do
       :pg.join(@pg_scope, {:ip, ip, user37}, self())
-      :global.unregister_name({:ip_lock, ip, user37})
     end
 
     state = %{
@@ -206,13 +205,17 @@ defmodule RsEther.Social.PlayerSession do
 
     if new_ip != "" do
       :pg.join(@pg_scope, {:ip, new_ip, state.user37}, self())
-      :global.unregister_name({:ip_lock, new_ip, state.user37})
     end
 
     {:noreply, %{state | ip: new_ip}}
   end
 
   def handle_cast({:update_ip, _same}, state) do
+    {:noreply, state}
+  end
+
+  def handle_cast({:lobby_transfer, transfer}, state) do
+    RsEther.WorldLink.send_to_rust({:lobby_transfer, state.user37, transfer})
     {:noreply, state}
   end
 

@@ -354,7 +354,7 @@ empty and disables per-IP tracking for that message.
 | 133 | WorldReady         | (empty)                                                                |
 
 `LoginCheckResponse` reason codes: `0` = allowed, `1` = account already online, `2` = IP
-session limit reached.
+session limit reached, `3` = account in a lobby.
 
 Planned save opcodes (not yet on the wire): `PlayerLoadResponse` (`user37: u64, save_data: [u8]`)
 and `PlayerSaveAck` (`user37: u64, success: u8`).

@@ -5,6 +5,13 @@ defmodule RsEther.ProtocolTest do
 
   # ── Decode: WorldRegister (opcode 0) ──
 
+  test "lobby registration and client-bound transfer retain their wire fields" do
+    assert {:lobby_register, 10} = Protocol.decode(<<0, 10, 1>>)
+    transfer = <<77::64, 10, 742::16, "2001:db8::1">>
+    assert {:lobby_transfer, 42, ^transfer} = Protocol.decode(<<14, 42::64, transfer::binary>>)
+    assert <<134, 42::64, ^transfer::binary>> = Protocol.encode({:lobby_transfer, 42, transfer})
+  end
+
   describe "decode world_register" do
     test "decodes valid node_id" do
       assert {:world_register, 10} = Protocol.decode(<<0, 10>>)
@@ -432,6 +439,11 @@ defmodule RsEther.ProtocolTest do
     test "encodes allowed=false with reason 2 (IP session limit)" do
       result = Protocol.encode({:login_check_response, 42, false, 2})
       assert <<132, 42::big-unsigned-64, 0::8, 2::8>> = result
+    end
+
+    test "encodes allowed=false with reason 3 (in a lobby)" do
+      result = Protocol.encode({:login_check_response, 42, false, 3})
+      assert <<132, 42::big-unsigned-64, 0::8, 3::8>> = result
     end
 
     test "produces correct byte size (1 + 8 + 1 + 1 = 11)" do
