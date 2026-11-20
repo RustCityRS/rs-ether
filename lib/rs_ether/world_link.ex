@@ -31,7 +31,16 @@ defmodule RsEther.WorldLink do
     Logger.info("WorldLink listening on 127.0.0.1:#{port}")
     send(self(), :accept)
 
-    {:ok, %{listen: listen_socket, client: nil, registered: false, lobby: Application.get_env(:rs_ether, :lobby, false), node_id: node_id}}
+    {:ok,
+     %{
+       listen: listen_socket,
+       client: nil,
+       registered: false,
+       lobby: Application.get_env(:rs_ether, :lobby, false),
+       node_id: node_id,
+       named: false,
+       presence: node_id
+     }}
   end
 
   @impl true
@@ -54,12 +63,10 @@ defmodule RsEther.WorldLink do
   end
 
   def handle_info({:tcp, socket, data}, %{client: socket, registered: false} = state) do
-    expected = if state.lobby, do: :lobby_register, else: :world_register
-
-    with {^expected, id} when id == state.node_id <- RsEther.Protocol.decode(data),
+    with {:ok, named, presence} <- registration(RsEther.Protocol.decode(data), state),
          :ok <- :gen_tcp.send(socket, RsEther.Protocol.encode(:world_ready)) do
       :inet.setopts(socket, active: :once)
-      {:noreply, %{state | registered: true}}
+      {:noreply, %{state | registered: true, named: named, presence: presence}}
     else
       _ ->
         :gen_tcp.close(socket)
@@ -74,6 +81,9 @@ defmodule RsEther.WorldLink do
         Logger.warning("WorldLink: unknown frame (#{byte_size(data)} bytes)")
 
       {register, _} when register in [:world_register, :lobby_register] ->
+        Logger.warning("Ignoring repeat Ether registration")
+
+      {:named_register, _, _, _, _} ->
         Logger.warning("Ignoring repeat Ether registration")
 
       {:player_login, user37, pid, max_friends, ip} ->
@@ -156,6 +166,15 @@ defmodule RsEther.WorldLink do
           GenServer.cast(pid, :refresh_friends)
           GenServer.cast(pid, :rebroadcast_presence)
         end)
+
+      {:named, user37, {:clan_ban, _slot, _name}} when state.named ->
+        Logger.debug("WorldLink: clan bans need clan settings, which aren't built (#{user37})")
+
+      {:named, user37, message} when state.named ->
+        dispatch_to_session(user37, message)
+
+      {:named, _user37, _message} ->
+        Logger.warning("WorldLink: named frame from a node that registered without a world")
     end
 
     :inet.setopts(socket, active: :once)
@@ -189,6 +208,15 @@ defmodule RsEther.WorldLink do
     {:noreply, state}
   end
 
+  defp registration({:world_register, id}, %{lobby: false, node_id: id}), do: {:ok, false, id}
+  defp registration({:lobby_register, id}, %{lobby: true, node_id: id}), do: {:ok, false, id}
+
+  defp registration({:named_register, id, lobby, world, members}, %{lobby: lobby, node_id: id}) do
+    {:ok, true, RsEther.Presence.encode(world, members)}
+  end
+
+  defp registration(_frame, _state), do: :refused
+
   defp start_session(user37, pid, state, private_mode, ip, max_friends) do
     case DynamicSupervisor.start_child(
            RsEther.SessionSupervisor,
@@ -199,7 +227,9 @@ defmodule RsEther.WorldLink do
              lobby: state.lobby,
              private_mode: private_mode,
              ip: ip,
-             max_friends: max_friends}
+             max_friends: max_friends,
+             named: state.named,
+             presence: state.presence}
          ) do
       {:ok, _} -> :ok
       {:error, {:already_started, _}} -> :ok

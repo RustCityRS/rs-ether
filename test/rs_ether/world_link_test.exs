@@ -50,6 +50,27 @@ defmodule RsEther.WorldLinkTest do
     end
   end
 
+  describe "named registration" do
+    test "a node that registers with its world starts named sessions on it", %{client: client, port: port} do
+      :gen_tcp.close(client)
+      Process.sleep(50)
+      named = connect(port)
+      send_frame(named, <<0, @node_id, 0, 7::16, 1>>)
+      assert <<133>> = recv_frame(named)
+      send_frame(named, <<1, 4242::big-unsigned-64, 1::big-16, 200::big-16>>)
+      Process.sleep(50)
+      [{session, _}] = Registry.lookup(RsEther.PlayerRegistry, 4242)
+      assert GenServer.call(session, {:check_visibility, 1}) == 0x10007
+      :gen_tcp.close(named)
+    end
+
+    test "a named lobby frame from an unnamed node is ignored", %{client: client} do
+      send_frame(client, <<16, 1::64, "bob", 0>>)
+      Process.sleep(50)
+      assert Process.alive?(Process.whereis(RsEther.WorldLink))
+    end
+  end
+
   describe "player_login via TCP" do
     test "starts a player session", %{client: client} do
       user37 = 12345
