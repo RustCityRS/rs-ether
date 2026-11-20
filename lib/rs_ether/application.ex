@@ -9,6 +9,7 @@ defmodule RsEther.Application do
       else
         node_id = Application.fetch_env!(:rs_ether, :node_id)
         ether_port = Application.fetch_env!(:rs_ether, :ether_port)
+        RsEther.MsgId.init(node_id)
         topologies = Application.get_env(:libcluster, :topologies, [])
 
         # Apply pending migrations on boot so the schema self-heals. Runs in
@@ -27,6 +28,7 @@ defmodule RsEther.Application do
             {Registry, keys: :unique, name: RsEther.PlayerRegistry},
             %{id: :pg_social, start: {:pg, :start_link, [:social]}},
             {DynamicSupervisor, name: RsEther.SessionSupervisor, strategy: :one_for_one},
+            {DynamicSupervisor, name: RsEther.ChannelSupervisor, strategy: :one_for_one},
             {Cluster.Supervisor, [topologies, [name: RsEther.ClusterSupervisor]]},
             RsEther.ClusterMonitor,
             # Resyncs player presence across the cluster when the database recovers

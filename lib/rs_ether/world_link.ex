@@ -31,7 +31,16 @@ defmodule RsEther.WorldLink do
     Logger.info("WorldLink listening on 127.0.0.1:#{port}")
     send(self(), :accept)
 
-    {:ok, %{listen: listen_socket, client: nil, node_id: node_id}}
+    {:ok,
+     %{
+       listen: listen_socket,
+       client: nil,
+       registered: false,
+       lobby: Application.get_env(:rs_ether, :lobby, false),
+       node_id: node_id,
+       named: false,
+       presence: node_id
+     }}
   end
 
   @impl true
@@ -53,18 +62,32 @@ defmodule RsEther.WorldLink do
     end
   end
 
+  def handle_info({:tcp, socket, data}, %{client: socket, registered: false} = state) do
+    with {:ok, named, presence} <- registration(RsEther.Protocol.decode(data), state),
+         :ok <- :gen_tcp.send(socket, RsEther.Protocol.encode(:world_ready)) do
+      :inet.setopts(socket, active: :once)
+      {:noreply, %{state | registered: true, named: named, presence: presence}}
+    else
+      _ ->
+        :gen_tcp.close(socket)
+        send(self(), :accept)
+        {:noreply, %{state | client: nil, registered: false}}
+    end
+  end
+
   def handle_info({:tcp, socket, data}, %{client: socket} = state) do
     case RsEther.Protocol.decode(data) do
       :unknown ->
         Logger.warning("WorldLink: unknown frame (#{byte_size(data)} bytes)")
 
-      {:world_register, node_id} ->
-        Logger.info("WorldLink: Rust registered as node #{node_id}")
-        payload = RsEther.Protocol.encode(:world_ready)
-        :gen_tcp.send(socket, payload)
+      {register, _} when register in [:world_register, :lobby_register] ->
+        Logger.warning("Ignoring repeat Ether registration")
+
+      {:named_register, _, _, _, _} ->
+        Logger.warning("Ignoring repeat Ether registration")
 
       {:player_login, user37, pid, max_friends, ip} ->
-        start_session(user37, pid, state.node_id, 0, ip, max_friends)
+        start_session(user37, pid, state, 0, ip, max_friends)
         release_login_locks(user37, ip)
 
       {:player_logout, user37} ->
@@ -92,18 +115,22 @@ defmodule RsEther.WorldLink do
         dispatch_to_session(user37, {:chat_mode_update, private_mode})
 
       {:player_resync, user37, pid, private_mode, max_friends, ip} ->
-        start_session(user37, pid, state.node_id, private_mode, ip, max_friends)
+        start_session(user37, pid, state, private_mode, ip, max_friends)
         dispatch_to_session(user37, {:update_ip, ip})
         release_login_locks(user37, ip)
         dispatch_to_session(user37, :send_lists)
 
       {:login_check, user37, max_per_ip, ip} ->
+        sessions = :pg.get_members(:social, {:player, user37})
+
         cond do
           ip != "" and ip_sessions_excluding(ip, user37) >= max_per_ip ->
             RsEther.WorldLink.send_to_rust({:login_check_response, user37, false, 2})
 
-          :pg.get_members(:social, {:player, user37}) != [] ->
-            RsEther.WorldLink.send_to_rust({:login_check_response, user37, false, 1})
+          sessions != [] ->
+            lobbies = :pg.get_members(:social, {:lobby, user37})
+            reason = if Enum.any?(sessions, &(&1 in lobbies)), do: 3, else: 1
+            RsEther.WorldLink.send_to_rust({:login_check_response, user37, false, reason})
 
           true ->
             lock_pid = spawn(fn -> Process.sleep(10_000) end)
@@ -126,12 +153,28 @@ defmodule RsEther.WorldLink do
       {:login_abort, user37, ip} ->
         release_login_locks(user37, ip)
 
+      {:lobby_transfer, user37, <<_session::64, world, _::binary>> = transfer} ->
+        if !state.lobby and world == state.node_id do
+          for pid <- :pg.get_members(:social, {:lobby, user37}) do
+            GenServer.cast(pid, {:lobby_transfer, transfer})
+          end
+        end
+
       :refresh_all ->
         Registry.select(RsEther.PlayerRegistry, [{{:_, :"$1", :_}, [], [:"$1"]}])
         |> Enum.each(fn pid ->
           GenServer.cast(pid, :refresh_friends)
           GenServer.cast(pid, :rebroadcast_presence)
         end)
+
+      {:named, user37, {:clan_ban, _slot, _name}} when state.named ->
+        Logger.debug("WorldLink: clan bans need clan settings, which aren't built (#{user37})")
+
+      {:named, user37, message} when state.named ->
+        dispatch_to_session(user37, message)
+
+      {:named, _user37, _message} ->
+        Logger.warning("WorldLink: named frame from a node that registered without a world")
     end
 
     :inet.setopts(socket, active: :once)
@@ -142,7 +185,7 @@ defmodule RsEther.WorldLink do
     Logger.warning("WorldLink: Rust disconnected")
     stop_all_sessions()
     send(self(), :accept)
-    {:noreply, %{state | client: nil}}
+    {:noreply, %{state | client: nil, registered: false}}
   end
 
   def handle_info({:tcp_error, socket, reason}, %{client: socket} = state) do
@@ -150,11 +193,11 @@ defmodule RsEther.WorldLink do
     stop_all_sessions()
     :gen_tcp.close(socket)
     send(self(), :accept)
-    {:noreply, %{state | client: nil}}
+    {:noreply, %{state | client: nil, registered: false}}
   end
 
   @impl true
-  def handle_cast({:send, message}, %{client: nil} = state) do
+  def handle_cast({:send, _message}, %{client: nil} = state) do
     Logger.debug("WorldLink: dropping message, no Rust connection")
     {:noreply, state}
   end
@@ -165,16 +208,28 @@ defmodule RsEther.WorldLink do
     {:noreply, state}
   end
 
-  defp start_session(user37, pid, node_id, private_mode, ip, max_friends) do
+  defp registration({:world_register, id}, %{lobby: false, node_id: id}), do: {:ok, false, id}
+  defp registration({:lobby_register, id}, %{lobby: true, node_id: id}), do: {:ok, false, id}
+
+  defp registration({:named_register, id, lobby, world, members}, %{lobby: lobby, node_id: id}) do
+    {:ok, true, RsEther.Presence.encode(world, members)}
+  end
+
+  defp registration(_frame, _state), do: :refused
+
+  defp start_session(user37, pid, state, private_mode, ip, max_friends) do
     case DynamicSupervisor.start_child(
            RsEther.SessionSupervisor,
            {RsEther.Social.PlayerSession,
              user37: user37,
              pid: pid,
-             node_id: node_id,
+             node_id: state.node_id,
+             lobby: state.lobby,
              private_mode: private_mode,
              ip: ip,
-             max_friends: max_friends}
+             max_friends: max_friends,
+             named: state.named,
+             presence: state.presence}
          ) do
       {:ok, _} -> :ok
       {:error, {:already_started, _}} -> :ok
@@ -183,10 +238,17 @@ defmodule RsEther.WorldLink do
   end
 
   defp release_login_locks(user37, ip) do
-    :global.unregister_name({:login_lock, user37})
+    release_local_lock({:login_lock, user37})
 
     if ip != "" do
-      :global.unregister_name({:ip_lock, ip, user37})
+      release_local_lock({:ip_lock, ip, user37})
+    end
+  end
+
+  defp release_local_lock(name) do
+    case :global.whereis_name(name) do
+      pid when is_pid(pid) and node(pid) == node() -> :global.unregister_name(name)
+      _ -> :ok
     end
   end
 
