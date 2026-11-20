@@ -9,7 +9,6 @@ defmodule RsEther.Social.FriendChannel do
   casts to them, so a session may call it without deadlocking.
   """
   use GenServer, restart: :temporary
-  require Logger
   alias RsEther.{MsgId, Names}
   alias RsEther.Social.{Channel, FriendStore, FriendchatStore, IgnoreStore}
 

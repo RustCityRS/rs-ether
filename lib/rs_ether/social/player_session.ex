@@ -9,7 +9,6 @@ defmodule RsEther.Social.PlayerSession do
   its world number with the members flag at bit 16, instead of the node id.
   """
   use GenServer, restart: :temporary
-  require Logger
   alias RsEther.{MsgId, Names, Presence}
   alias RsEther.Social.{ClanChannel, FriendChannel, FriendStore, FriendchatStore, IgnoreStore}
 

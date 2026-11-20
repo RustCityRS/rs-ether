@@ -197,7 +197,7 @@ defmodule RsEther.WorldLink do
   end
 
   @impl true
-  def handle_cast({:send, message}, %{client: nil} = state) do
+  def handle_cast({:send, _message}, %{client: nil} = state) do
     Logger.debug("WorldLink: dropping message, no Rust connection")
     {:noreply, state}
   end
