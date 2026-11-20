@@ -10,6 +10,7 @@ defmodule RsEther.WorldLink do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @spec send_to_rust(RsEther.Protocol.outbound()) :: :ok
   def send_to_rust(message) do
     GenServer.cast(__MODULE__, {:send, message})
   end

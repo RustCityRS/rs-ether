@@ -62,8 +62,173 @@ defmodule RsEther.Protocol do
   @op_clan_delta 144
   @op_clan_message 145
 
+  # ── Types ──
+
+  @type u8 :: 0..255
+  @type u16 :: 0..65_535
+  @type u32 :: 0..4_294_967_295
+  @type i8 :: -128..127
+  @type i32 :: -2_147_483_648..2_147_483_647
+  @type i64 :: -9_223_372_036_854_775_808..9_223_372_036_854_775_807
+
+  @typedoc "A player's name hash, sent as a u64."
+  @type user37 :: non_neg_integer()
+
+  @typedoc "A display name, without the 0 byte that ends it on the wire."
+  @type name :: binary()
+
+  @typedoc """
+  A name as the client compares names (lowercase, separators as `_`, accents
+  folded), without the 0 byte that ends it on the wire. Rust sends the names a
+  player types this way; `RsEther.Names.resolve/1` looks them up.
+  """
+  @type name_key :: binary()
+
+  @typedoc """
+  The address per-address limits count a player under, as text: an IPv4
+  address as itself, an IPv6 address as its /64 prefix (rs-util's
+  `limit_address`), so players can share one. Empty for a player without an
+  address. Not the full address a `transfer()` carries.
+  """
+  @type ip :: binary()
+
+  @typedoc "The `LobbyTransfer` payload: `client_session: i64, world: u8, revision: u16, ip: [u8]`."
+  @type transfer :: binary()
+
+  @typedoc "How a named message is encoded: 0 text (huffman bytes), 1 quick chat."
+  @type kind :: u8()
+
+  @typedoc """
+  A cluster-wide 40-bit message id, as its high 16 and low 24 bits (see
+  `RsEther.MsgId`). Frames carry the low half in a 32-bit field, but the client
+  keeps only 24 bits of it.
+  """
+  @type uid :: {u16(), 0..0xFF_FFFF}
+
+  @typedoc "0 allowed, 1 account already online, 2 IP session limit, 3 account in a lobby."
+  @type login_check_reason :: 0..3
+
+  @typedoc "0 delivered, 1 offline or hidden, 2 not on the sender's friends list."
+  @type pm_result_code :: 0..2
+
+  @typedoc "A frame from Rust, decoded."
+  @type inbound ::
+          {:world_register, node_id :: u8()}
+          | {:lobby_register, node_id :: u8()}
+          | {:named_register, node_id :: u8(), lobby :: boolean(), world :: u16(), members :: boolean()}
+          | {:player_login, user37(), pid :: u16(), max_friends :: u16(), ip()}
+          | {:player_logout, user37()}
+          | {:friend_add | :friend_del, owner37 :: user37(), friend37 :: user37()}
+          | {:ignore_add | :ignore_del, owner37 :: user37(), ignore37 :: user37()}
+          | {:private_message, sender37 :: user37(), target37 :: user37(), level :: u8(), bytes :: binary()}
+          | {:request_lists, user37()}
+          | {:chat_mode_update, user37(), private_mode :: u8()}
+          | {:player_resync, user37(), pid :: u16(), private_mode :: u8(), max_friends :: u16(), ip()}
+          | {:login_check, user37(), max_per_ip :: u8(), ip()}
+          | :refresh_all
+          | {:login_abort, user37(), ip()}
+          | {:lobby_transfer, user37(), transfer()}
+          | {:named, user37(), named_request()}
+
+  @typedoc "A named protocol request, for the session of the player it came with."
+  @type named_request ::
+          {:profile, tier :: u8(), combat :: u8(), display :: name()}
+          | {:friend_add_name | :friend_del_name | :ignore_del_name, name_key()}
+          | {:ignore_add_name, name_key(), temporary :: boolean()}
+          | {:friend_set_rank, rank :: u8(), name_key()}
+          | {:pm_send, seq :: u16(), tier :: u8(), kind(), target :: name_key(), payload :: binary()}
+          | {:friendchat_join, owner :: name_key()}
+          | :friendchat_leave
+          | {:friendchat_say, tier :: u8(), kind(), payload :: binary()}
+          | {:friendchat_kick, name_key()}
+          | {:clan_say, affined :: boolean(), tier :: u8(), kind(), payload :: binary()}
+          | {:clan_kick, affined :: boolean(), slot :: u16(), name()}
+          | {:clan_ban, slot :: u16(), name()}
+
+  @typedoc "A message for Rust, before encoding."
+  @type outbound ::
+          {:friend_update, target37 :: user37(), friend37 :: user37(), node :: u8()}
+          | {:ignore_list_full, target37 :: user37(), [user37()]}
+          | {:pm_deliver, recipient37 :: user37(), sender37 :: user37(), msg_id :: i32(), level :: u8(),
+             bytes :: binary()}
+          | {:friend_list_complete, target37 :: user37()}
+          | {:login_check_response, user37(), allowed :: boolean(), login_check_reason()}
+          | {:lobby_transfer, user37(), transfer()}
+          | :world_ready
+          | {:friends, target37 :: user37(), [friend_entry()]}
+          | {:ignores, target37 :: user37(), full :: boolean(), [ignore_entry()]}
+          | {:pm_named, recipient37 :: user37(), uid(), tier :: u8(), kind(), sender :: name(), payload :: binary()}
+          # target is the key the sender typed when the code is 2, else the display name.
+          | {:pm_result, sender37 :: user37(), seq :: u16(), target37 :: user37(), pm_result_code(), kind(),
+             target :: name() | name_key(), payload :: binary()}
+          | {:social_message, target37 :: user37(), chat_type :: u16(), text :: binary()}
+          | {:friendchat_channel, target37 :: user37(), friendchat_channel() | nil}
+          | {:friendchat_user, target37 :: user37(), friendchat_user()}
+          | {:friendchat_message, target37 :: user37(), channel37 :: i64(), uid(), tier :: u8(), kind(),
+             sender :: name(), payload :: binary()}
+          | {:clan_channel, target37 :: user37(), affined :: boolean(), clan_channel() | nil}
+          | {:clan_delta, target37 :: user37(), affined :: boolean(), hash :: i64(), update_num :: i64(),
+             [clan_delta_op()]}
+          | {:clan_message, target37 :: user37(), affined :: boolean(), uid(), tier :: u8(), kind(),
+             sender :: name(), payload :: binary()}
+
+  @typedoc "A friends list entry. `prev` is empty when the friend wasn't renamed; world 0 is offline."
+  @type friend_entry :: %{
+          renamed: boolean(),
+          name: name(),
+          prev: name(),
+          world: u16(),
+          members: boolean(),
+          rank: u8()
+        }
+
+  @typedoc "An ignore list entry. `prev` is empty when the player wasn't renamed."
+  @type ignore_entry :: %{flags: u8(), name: name(), prev: name()}
+
+  @typedoc """
+  A friends chat channel, as `RsEther.Social.FriendChannel` snapshots it. Its
+  `name` is read by the session, not sent.
+  """
+  @type friendchat_channel :: %{
+          optional(:name) => binary(),
+          owner37: user37(),
+          owner: name(),
+          channel37: i64(),
+          min_kick: i8(),
+          members: [friendchat_user()]
+        }
+
+  @typedoc "A friends chat member. Rank -128 in a `:friendchat_user` removes them."
+  @type friendchat_user :: %{
+          optional(:user37) => user37(),
+          name: name(),
+          world: u16(),
+          rank: i8(),
+          combat: u8()
+        }
+
+  @typedoc "A clan chat channel, as `RsEther.Social.ClanChannel` snapshots it."
+  @type clan_channel :: %{
+          hash: i64(),
+          update_num: i64(),
+          name: name(),
+          rank_kick: i8(),
+          rank_talk: i8(),
+          users: [clan_user()]
+        }
+
+  @type clan_user :: %{name: name(), rank: i8(), world: u16()}
+
+  @typedoc "One change in a `:clan_delta`."
+  @type clan_delta_op ::
+          {:add, name(), world :: u16(), rank :: i8()}
+          | {:update, slot :: u16(), rank :: i8(), world :: u16(), name()}
+          | {:delete, slot :: u16()}
+          | {:base, name() | nil, rank_talk :: i8(), rank_kick :: i8()}
+
   # ── Decode (Rust -> Elixir) ──
 
+  @spec decode(binary()) :: inbound() | :unknown
   def decode(<<@op_world_register, node_id::8, 1>>), do: {:lobby_register, node_id}
 
   def decode(<<@op_world_register, node_id::8>>) do
@@ -199,6 +364,7 @@ defmodule RsEther.Protocol do
 
   # ── Encode (Elixir -> Rust) ──
 
+  @spec encode(outbound()) :: binary()
   def encode({:friend_update, target37, friend37, node}) do
     <<@op_friend_update, target37::big-unsigned-64, friend37::big-unsigned-64, node::8>>
   end
@@ -328,6 +494,7 @@ defmodule RsEther.Protocol do
       tier::8, kind::8, jstr(sender)::binary, payload::binary>>
   end
 
+  @spec clan_op(clan_delta_op()) :: binary()
   defp clan_op({:add, name, world, rank}),
     do: <<1, jstr(name)::binary, world::big-16, rank::signed-8>>
 
@@ -340,9 +507,12 @@ defmodule RsEther.Protocol do
   defp clan_op({:base, name, talk, kick}),
     do: <<4, 1::8, jstr(name)::binary, talk::signed-8, kick::signed-8>>
 
+  @spec jstr(name()) :: binary()
   defp jstr(text), do: <<text::binary, 0>>
 
   # The 0-ended string that starts `bin`, given to `fun` with what follows it.
+  @spec take_jstr(binary(), (name(), binary() -> named | :unknown)) :: named | :unknown
+        when named: {:named, user37(), named_request()}
   defp take_jstr(bin, fun) do
     case :binary.split(bin, <<0>>) do
       [text, rest] -> fun.(text, rest)
@@ -351,12 +521,16 @@ defmodule RsEther.Protocol do
   end
 
   # The same for a string that ends the frame.
+  @spec last_jstr(binary(), (name() -> named)) :: named | :unknown
+        when named: {:named, user37(), named_request()}
   defp last_jstr(bin, fun) do
     take_jstr(bin, fn
       text, <<>> -> fun.(text)
       _text, _trailing -> :unknown
     end)
   end
+
+  @spec flag(boolean()) :: 0 | 1
   defp flag(true), do: 1
   defp flag(false), do: 0
 end

@@ -11,7 +11,7 @@
 
 ----
 
-# rs-ether — Elixir Sidecar for Multi-World Nodes
+# rs-ether: Elixir Sidecar for Multi-World Nodes
 
 ## Context
 
@@ -634,11 +634,11 @@ The named protocol also reads display names and held previous names from rs-db's
 
 ### Runtime State
 
-- **`:pg` process groups** — cluster-wide presence: `{:player, user37}` → PlayerSession pid
-- **`:global` names** — `{:login_lock, user37}` → atomic cluster-wide login lock
-- **PlayerSession GenServer** — per-player: friends list, ignore list, private_mode (loaded from DB on login/resync); on a named node also display names, friends chat ranks, temporary ignores and its channels
-- **FriendChannel / ClanChannel GenServers** — one per channel, `:global` names `{:friendchat, owner37}` and `{:clanchannel, hash}`, under `ChannelSupervisor`; a friends chat stops when its last member leaves, lifting its bans
-- **Writes the database missed** — a session keeps them and writes them on the `:resync` after recovery
+- **`:pg` process groups**: cluster-wide presence: `{:player, user37}` → PlayerSession pid
+- **`:global` names**: `{:login_lock, user37}` → atomic cluster-wide login lock
+- **PlayerSession GenServer**: per-player: friends list, ignore list, private_mode (loaded from DB on login/resync); on a named node also display names, friends chat ranks, temporary ignores and its channels
+- **FriendChannel / ClanChannel GenServers**: one per channel, `:global` names `{:friendchat, owner37}` and `{:clanchannel, hash}`, under `ChannelSupervisor`; a friends chat stops when its last member leaves, lifting its bans
+- **Writes the database missed**: a session keeps them and writes them on the `:resync` after recovery
 
 ### Visibility Rules (private_mode)
 
@@ -732,8 +732,8 @@ cargo world2    # --node-id 11, ether auto-spawned
 ## Verification Checklist
 
 1. Start Postgres
-2. `cargo world1` — sidecar auto-starts, runs migrations, connects
-3. `cargo world2` — second world, cluster forms automatically
+2. `cargo world1`: sidecar auto-starts, runs migrations, connects
+3. `cargo world2`: second world, cluster forms automatically
 4. Login Player A on World 1, Player B on World 2
 5. A adds B as friend → A sees B online with correct node
 6. B adds A as friend → B sees A online with correct node
