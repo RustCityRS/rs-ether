@@ -11,7 +11,7 @@
 
 ----
 
-# rs-ether — Elixir Sidecar for Multi-World Nodes
+# rs-ether: Elixir Sidecar for Multi-World Nodes
 
 ## Context
 
@@ -324,8 +324,8 @@ All hash fields (`user37`, `owner37`, `friend37`, etc.) are unsigned 64-bit big-
 
 | Op | Name           | Payload                                                |
 |----|----------------|--------------------------------------------------------|
-| 0  | WorldRegister  | `node_id: u8`                                          |
-| 1  | PlayerLogin    | `user37: u64, pid: u16, ip: [u8]`                      |
+| 0  | WorldRegister  | `node_id: u8` (world), `node_id: u8, 1` (lobby), or from 647 `node_id: u8, lobby: u8, world: u16, members: u8` |
+| 1  | PlayerLogin    | `user37: u64, pid: u16, max_friends: u16, ip: [u8]`    |
 | 2  | PlayerLogout   | `user37: u64`                                          |
 | 3  | FriendAdd      | `owner37: u64, friend37: u64`                          |
 | 4  | FriendDel      | `owner37: u64, friend37: u64`                          |
@@ -334,13 +334,40 @@ All hash fields (`user37`, `owner37`, `friend37`, etc.) are unsigned 64-bit big-
 | 7  | PrivateMessage | `sender37: u64, target37: u64, level: u8, bytes: [u8]` |
 | 8  | RequestLists   | `user37: u64`                                          |
 | 9  | ChatModeUpdate | `user37: u64, private_mode: u8`                        |
-| 10 | PlayerResync   | `user37: u64, pid: u16, private_mode: u8, ip: [u8]`    |
+| 10 | PlayerResync   | `user37: u64, pid: u16, private_mode: u8, max_friends: u16, ip: [u8]` |
 | 11 | LoginCheck     | `user37: u64, max_per_ip: u8, ip: [u8]`                |
 | 12 | RefreshAll     | (empty)                                                |
 | 13 | LoginAbort     | `user37: u64, ip: [u8]`                                |
+| 14 | LobbyTransfer  | `user37: u64, client_session: i64, world: u8, revision: u16, ip: [u8]` |
 
 `ip` is the player's address as raw bytes at the end of the frame; an absent ip decodes as
 empty and disables per-IP tracking for that message.
+
+#### Named protocol (647 and later)
+
+A node that registers with the long `WorldRegister` form speaks the named protocol: the 647 and
+742 clients name players by display name, so these frames carry names (`jstr` = the bytes, then a 0 byte,
+as the game protocol's strings) instead of hashes. Names from the client arrive normalised the way it compares names
+(lowercase, separators as `_`). Its sessions' presence is the world number (lobbies from 1100)
+with the members flag at bit 16. `kind` is 0 for text (huffman bytes as the client sends them)
+or 1 for quick chat (`phrase: u16` + values).
+
+| Op | Name            | Payload                                                        |
+|----|-----------------|----------------------------------------------------------------|
+| 15 | Profile         | `user37: u64, tier: u8, combat: u8, display: jstr`             |
+| 16 | FriendAddName   | `owner37: u64, name: jstr`                                     |
+| 17 | FriendDelName   | `owner37: u64, name: jstr`                                     |
+| 18 | IgnoreAddName   | `owner37: u64, temporary: u8, name: jstr`                      |
+| 19 | IgnoreDelName   | `owner37: u64, name: jstr`                                     |
+| 20 | FriendSetRank   | `owner37: u64, rank: u8, name: jstr`                           |
+| 21 | PmSend          | `sender37: u64, seq: u16, tier: u8, kind: u8, name: jstr, payload: [u8]` |
+| 22 | FriendchatJoin  | `user37: u64, owner: jstr`                                     |
+| 23 | FriendchatLeave | `user37: u64`                                                  |
+| 24 | FriendchatSay   | `user37: u64, tier: u8, kind: u8, payload: [u8]`               |
+| 25 | FriendchatKick  | `user37: u64, name: jstr`                                      |
+| 26 | ClanSay         | `user37: u64, affined: u8, tier: u8, kind: u8, payload: [u8]`  |
+| 27 | ClanKick        | `user37: u64, affined: u8, slot: u16, name: jstr`              |
+| 28 | ClanBan         | `user37: u64, slot: u16, name: jstr`                           |
 
 ### Elixir -> Rust (Inbound)
 
@@ -352,18 +379,40 @@ empty and disables per-IP tracking for that message.
 | 131 | FriendListComplete | `target37: u64`                                                        |
 | 132 | LoginCheckResponse | `user37: u64, allowed: u8, reason: u8`                                 |
 | 133 | WorldReady         | (empty)                                                                |
+| 134 | TransferRequest    | the `LobbyTransfer` payload, to the lobby holding the player           |
 
 `LoginCheckResponse` reason codes: `0` = allowed, `1` = account already online, `2` = IP
-session limit reached.
+session limit reached, `3` = account in a lobby.
+
+Named protocol frames, all for the player `target37` (the client's packets they become are in
+`rs-engine/src/social.rs`):
+
+| Op  | Name              | Payload                                                                 |
+|-----|-------------------|-------------------------------------------------------------------------|
+| 135 | Friends           | `target37: u64, count: u16, [renamed: u8, name: jstr, prev: jstr, world: u16, members: u8, rank: u8]` |
+| 136 | Ignores           | `target37: u64, full: u8, count: u16, [flags: u8, name: jstr, prev: jstr]` |
+| 137 | PmNamed           | `target37: u64, uid_hi: u16, uid_lo: u32, tier: u8, kind: u8, sender: jstr, payload: [u8]` |
+| 138 | PmResult          | `target37: u64, seq: u16, recipient37: u64, code: u8, kind: u8, recipient: jstr, payload: [u8]` |
+| 139 | SocialMessage     | `target37: u64, chat_type: u16, text: jstr`                 |
+| 140 | FriendchatChannel | `target37: u64` (left), or `+ owner37: u64, owner: jstr, channel37: i64, min_kick: i8, count: u8, [name: jstr, world: u16, rank: i8, combat: u8]` |
+| 141 | FriendchatUser    | `target37: u64, rank: i8 (-128 left), world: u16, combat: u8, name: jstr` |
+| 142 | FriendchatMessage | `target37: u64, channel37: i64, uid_hi: u16, uid_lo: u32, tier: u8, kind: u8, sender: jstr, payload: [u8]` |
+| 143 | ClanChannel       | `target37: u64, affined: u8, present: u8` + the channel when present   |
+| 144 | ClanDelta         | `target37: u64, affined: u8, hash: i64, update_num: i64, count: u16, [op]` |
+| 145 | ClanMessage       | `target37: u64, affined: u8, uid_hi: u16, uid_lo: u32, tier: u8, kind: u8, sender: jstr, payload: [u8]` |
+
+`PmResult` codes: `0` delivered (the sender's client gets its echo), `1` offline or hidden,
+`2` not on the sender's friends list. Message ids are unique across the cluster: the client
+drops a private, friends chat or clan message whose id it saw among its last 100.
 
 Planned save opcodes (not yet on the wire): `PlayerLoadResponse` (`user37: u64, save_data: [u8]`)
 and `PlayerSaveAck` (`user37: u64, success: u8`).
 
 ### Internal (not on wire)
 
-| Name             | Description                                        |
-|------------------|----------------------------------------------------|
-| EtherReconnected | Sent by ether client to engine when TCP reconnects |
+| Name             | Description                                                                 |
+|------------------|-----------------------------------------------------------------------------|
+| EtherReconnected | Sent by ether client to engine when TCP reconnects, with the player changes queued while it was down, to resend after every player is resynced |
 
 ---
 
@@ -559,13 +608,37 @@ CREATE TABLE ignores
     owner_hash    BIGINT PRIMARY KEY,
     ignore_hashes BIGINT[] NOT NULL DEFAULT '{}'
 );
+
+-- A friends chat owner's channel (no name = disabled) and the ranks they gave friends.
+CREATE TABLE friendchat_settings
+(
+    owner_hash BIGINT PRIMARY KEY,
+    name       TEXT,
+    enter_rank SMALLINT NOT NULL,
+    talk_rank  SMALLINT NOT NULL,
+    kick_rank  SMALLINT NOT NULL,
+    loot_rank  SMALLINT NOT NULL,
+    coinshare  BOOLEAN  NOT NULL
+);
+
+CREATE TABLE friendchat_ranks
+(
+    owner_hash  BIGINT,
+    friend_hash BIGINT,
+    rank        SMALLINT NOT NULL,
+    PRIMARY KEY (owner_hash, friend_hash)
+);
 ```
+
+The named protocol also reads display names and held previous names from rs-db's `players`.
 
 ### Runtime State
 
-- **`:pg` process groups** — cluster-wide presence: `{:player, user37}` → PlayerSession pid
-- **`:global` names** — `{:login_lock, user37}` → atomic cluster-wide login lock
-- **PlayerSession GenServer** — per-player: friends list, ignore list, private_mode (loaded from DB on login/resync)
+- **`:pg` process groups**: cluster-wide presence: `{:player, user37}` → PlayerSession pid
+- **`:global` names**: `{:login_lock, user37}` → atomic cluster-wide login lock
+- **PlayerSession GenServer**: per-player: friends list, ignore list, private_mode (loaded from DB on login/resync); on a named node also display names, friends chat ranks, temporary ignores and its channels
+- **FriendChannel / ClanChannel GenServers**: one per channel, `:global` names `{:friendchat, owner37}` and `{:clanchannel, hash}`, under `ChannelSupervisor`; a friends chat stops when its last member leaves, lifting its bans
+- **Writes the database missed**: a session keeps them and writes them on the `:resync` after recovery
 
 ### Visibility Rules (private_mode)
 
@@ -659,8 +732,8 @@ cargo world2    # --node-id 11, ether auto-spawned
 ## Verification Checklist
 
 1. Start Postgres
-2. `cargo world1` — sidecar auto-starts, runs migrations, connects
-3. `cargo world2` — second world, cluster forms automatically
+2. `cargo world1`: sidecar auto-starts, runs migrations, connects
+3. `cargo world2`: second world, cluster forms automatically
 4. Login Player A on World 1, Player B on World 2
 5. A adds B as friend → A sees B online with correct node
 6. B adds A as friend → B sees A online with correct node

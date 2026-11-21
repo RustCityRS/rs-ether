@@ -18,10 +18,31 @@ defmodule RsEther.Social.PlayerSessionTest do
       assert :pg.get_members(:social, {:player, @user1}) != []
     end
 
-    test "releases login lock on init" do
+    test "init leaves the login lock to its owner" do
       :global.register_name({:login_lock, @user1}, self())
       start_session(@user1)
-      assert :global.whereis_name({:login_lock, @user1}) == :undefined
+      assert :global.whereis_name({:login_lock, @user1}) == self()
+      :global.unregister_name({:login_lock, @user1})
+    end
+
+    test "joins the lobby group when started for a lobby" do
+      session = start_session(@user1, lobby: true)
+      assert :pg.get_members(:social, {:lobby, @user1}) == [session]
+      assert :pg.get_members(:social, {:player, @user1}) == [session]
+    end
+
+    test "a world session stays out of the lobby group" do
+      start_session(@user1)
+      assert :pg.get_members(:social, {:lobby, @user1}) == []
+    end
+
+    test "forwards a lobby transfer to Rust" do
+      session = start_session(@user1, lobby: true)
+      drain_rust_messages()
+
+      transfer = <<77::64, 10, 742::16, "10.0.0.1">>
+      GenServer.cast(session, {:lobby_transfer, transfer})
+      assert_receive {:rust_msg, {:lobby_transfer, @user1, ^transfer}}, 1000
     end
 
     test "cannot start duplicate sessions for same user" do

@@ -8,6 +8,7 @@ node_host = System.get_env("RS_NODE_HOST", "127.0.0.1")
 
 config :rs_ether,
   node_id: String.to_integer(node_id),
+  lobby: System.get_env("RS_LOBBY", "false") == "true",
   ether_port: String.to_integer(ether_port),
   auto_migrate: System.get_env("RS_AUTO_MIGRATE", "true") == "true"
 
@@ -26,14 +27,14 @@ hosts =
     |> String.split(",", trim: true)
     |> Enum.map(&String.to_atom/1)
   else
-    for id <- 10..20, do: :"world#{id}@#{node_host}"
+    for role <- ["world", "lobby"], id <- 10..20, do: :"#{role}#{id}@#{node_host}"
   end
 
 config :libcluster,
   topologies: [
     rs_ether: [
       strategy: Cluster.Strategy.Epmd,
-      config: [hosts: hosts]
+      config: [hosts: hosts, timeout: 10_000]
     ]
   ]
 

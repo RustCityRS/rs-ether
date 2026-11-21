@@ -18,7 +18,7 @@ defmodule RsEther.ClusterMonitor do
 
   @impl true
   def handle_info({:nodedown, node}, state) do
-    Logger.info("Node down: #{node} — refreshing friend presence for all sessions")
+    Logger.info("Node down: #{node}, refreshing friend presence for all sessions")
 
     Registry.select(RsEther.PlayerRegistry, [{{:_, :"$1", :_}, [], [:"$1"]}])
     |> Enum.each(fn pid ->
@@ -29,7 +29,7 @@ defmodule RsEther.ClusterMonitor do
   end
 
   def handle_info({:nodeup, node}, state) do
-    Logger.info("Node up: #{node} — refreshing friend presence and rebroadcasting for all sessions")
+    Logger.info("Node up: #{node}, refreshing friend presence and rebroadcasting for all sessions")
 
     Registry.select(RsEther.PlayerRegistry, [{{:_, :"$1", :_}, [], [:"$1"]}])
     |> Enum.each(fn pid ->

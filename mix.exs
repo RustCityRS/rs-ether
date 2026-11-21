@@ -5,11 +5,12 @@ defmodule RsEther.MixProject do
     [
       app: :rs_ether,
       version: "0.1.0",
-      elixir: "~> 1.15",
+      elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
+      dialyzer: [flags: [:error_handling, :extra_return, :missing_return]],
       releases: [rs_ether: [include_executables_for: [:unix, :windows]]]
     ]
   end
@@ -28,7 +29,8 @@ defmodule RsEther.MixProject do
     [
       {:ecto_sql, "~> 3.10"},
       {:postgrex, ">= 0.0.0"},
-      {:libcluster, "~> 3.3"}
+      {:libcluster, "~> 3.3"},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 
